@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>诗话 · 诗境</title>
+    <meta name="description" id="meta-desc" content="诗境诗话：关于近体诗格律、意象与创作的记录。" />
+    <meta name="theme-color" content="#F7F4EC" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/blog.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <a href="/blog.html">诗话</a>
+          <a href="/app.html">创作台</a>
+          <a href="/login.html" id="nav-auth">登录</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap article-main">
+      <article class="article" id="article" hidden>
+        <a class="article-back" href="/blog.html">← 返回诗话</a>
+
+        <img class="article-cover" id="article-cover" alt="" hidden />
+
+        <header class="article-head">
+          <h1 id="article-title"></h1>
+          <div class="article-meta">
+            <span id="article-author"></span>
+            <span>·</span>
+            <time id="article-date"></time>
+            <span id="article-tags"></span>
+            <a class="edit-link" id="article-edit" href="#" hidden>编辑</a>
+          </div>
+        </header>
+
+        <div class="prose" id="article-body"></div>
+
+        <footer class="article-foot">
+          <span>以君之意，成君之诗</span>
+          <span class="seal" aria-hidden="true">诗</span>
+        </footer>
+      </article>
+
+      <div class="state-box-article" id="loading-state">
+        <span class="spinner"></span>
+        <p>正在展卷…</p>
+      </div>
+
+      <div class="state-box-article" id="error-state" hidden>
+        <h2>文章不存在</h2>
+        <p id="error-message">这篇诗话可能已被移除或尚未发布。</p>
+        <a class="btn btn-ghost btn-sm" href="/blog.html">回到诗话</a>
+      </div>
+    </main>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/post.js" type="module"></script>
+  </body>
+</html>

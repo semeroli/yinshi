@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>创作台 · 诗境</title>
+    <meta name="theme-color" content="#F7F4EC" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <button type="button" id="open-history">我的诗笺 <span class="count-badge" id="history-count">0</span></button>
+          <a href="/blog.html">诗话</a>
+          <a href="/admin-posts.html" id="admin-link" hidden>管理</a>
+          <span class="user-name" id="user-name"></span>
+          <button type="button" id="btn-logout">退出</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap app-main">
+      <div class="app-head">
+        <div>
+          <span class="eyebrow">创作台</span>
+          <h1>写下此刻的意境</h1>
+          <p class="app-sub">一两句景，一点心事，剩下的交给格律。</p>
+        </div>
+        <div class="mode-badge" id="mode-badge" hidden>
+          <span class="dot"></span><span id="mode-text">演示模式</span>
+        </div>
+      </div>
+
+      <div class="app-grid">
+        <!-- 左：输入 -->
+        <section class="panel compose" aria-labelledby="compose-title">
+          <h2 id="compose-title" class="visually-hidden">意境输入</h2>
+
+          <form id="poem-form" novalidate>
+            <div class="field">
+              <div class="field-head">
+                <label for="description">意境描述</label>
+                <span class="counter"><span id="char-count">0</span>/120</span>
+              </div>
+              <textarea
+                id="description"
+                class="textarea"
+                name="description"
+                maxlength="120"
+                placeholder="例如：秋夜江边，孤舟灯火，思念远人。"
+                aria-describedby="desc-hint"
+              ></textarea>
+              <p class="hint" id="desc-hint">越具体越好：地点、时令、天气、心绪，各写一点。</p>
+              <div class="quick-tags" id="quick-tags">
+                <button type="button" class="quick">秋夜江边，孤舟灯火</button>
+                <button type="button" class="quick">大漠风沙，孤城落日</button>
+                <button type="button" class="quick">雨后空山，松间清泉</button>
+                <button type="button" class="quick">春深小院，燕子双飞</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">体裁</span>
+              <div class="segmented" role="radiogroup" aria-label="体裁">
+                <button type="button" class="seg is-active" data-form="自动" role="radio" aria-checked="true">自动</button>
+                <button type="button" class="seg" data-form="五言绝句" role="radio" aria-checked="false">五言绝句</button>
+                <button type="button" class="seg" data-form="七言绝句" role="radio" aria-checked="false">七言绝句</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">风格</span>
+              <div class="chips" role="radiogroup" aria-label="风格" id="style-chips">
+                <button type="button" class="chip-btn is-active" data-style="自动" role="radio" aria-checked="true">自动</button>
+                <button type="button" class="chip-btn" data-style="婉约" role="radio" aria-checked="false">婉约</button>
+                <button type="button" class="chip-btn" data-style="豪放" role="radio" aria-checked="false">豪放</button>
+                <button type="button" class="chip-btn" data-style="冲淡" role="radio" aria-checked="false">冲淡</button>
+                <button type="button" class="chip-btn" data-style="绮丽" role="radio" aria-checked="false">绮丽</button>
+                <button type="button" class="chip-btn" data-style="雄浑" role="radio" aria-checked="false">雄浑</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">格律档位</span>
+              <div class="switch-row">
+                <div class="segmented segmented-sm" role="radiogroup" aria-label="格律档位">
+                  <button type="button" class="seg is-active" data-strict="true" role="radio" aria-checked="true">严格</button>
+                  <button type="button" class="seg" data-strict="false" role="radio" aria-checked="false">宽松</button>
+                </div>
+                <p class="hint">严格：兼顾平仄，意境优先；宽松：只保证字数与二四句押韵。</p>
+              </div>
+            </div>
+
+            <p class="error-text" id="form-error" role="alert"></p>
+
+            <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
+              <span class="btn-label">请君落笔</span>
+            </button>
+            <p class="hint privacy">意境仅用于本次生成，服务端缓存 24 小时用于节省额度。</p>
+          </form>
+        </section>
+
+        <!-- 右：结果 -->
+        <section class="panel result" aria-labelledby="result-title" aria-live="polite">
+          <div class="result-head">
+            <h2 id="result-title">诗笺</h2>
+            <span class="result-meta" id="result-meta"></span>
+          </div>
+
+          <!-- 空状态 -->
+          <div class="empty" id="empty-state">
+            <div class="empty-seal seal" aria-hidden="true">待</div>
+            <p>落笔之后，诗自会来。</p>
+            <span>先得意象，再成格律，最后逐字校对。</span>
+          </div>
+
+          <!-- 加载状态 -->
+          <div class="loading" id="loading-state" hidden>
+            <div class="loading-steps">
+              <div class="lstep" data-step="1"><i></i><span>解析意象</span></div>
+              <div class="lstep" data-step="2"><i></i><span>依律成诗</span></div>
+              <div class="lstep" data-step="3"><i></i><span>逐字校对</span></div>
+            </div>
+            <div class="loading-paper">
+              <div class="loading-line w70"></div>
+              <div class="loading-line w90"></div>
+              <div class="loading-line w60"></div>
+              <div class="loading-line w80"></div>
+            </div>
+          </div>
+
+          <!-- 结果状态 -->
+          <div class="poem-result" id="poem-result" hidden>
+            <div class="imagery-block">
+              <span class="block-label">意象</span>
+              <div class="imagery-chips" id="imagery-chips"></div>
+            </div>
+
+            <article class="poem-card" id="poem-card">
+              <div class="poem-card-head">
+                <h2 class="poem-title" id="poem-title"></h2>
+                <div class="poem-tags">
+                  <span id="poem-form-tag"></span>
+                  <span id="poem-style-tag"></span>
+                  <span id="poem-mood-tag" class="mood"></span>
+                </div>
+              </div>
+              <div class="poem-lines" id="poem-lines"></div>
+              <div class="poem-foot">
+                <span class="rhyme-note" id="rhyme-note"></span>
+              </div>
+            </article>
+
+            <div class="poem-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-again">换一首</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-copy">复制</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-save">收藏</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-paraphrase" aria-expanded="false">
+                释义
+              </button>
+            </div>
+
+            <div class="paraphrase" id="paraphrase" hidden>
+              <span class="block-label">白话释义</span>
+              <ol id="paraphrase-list"></ol>
+            </div>
+
+            <p class="validation" id="validation-note"></p>
+          </div>
+
+          <!-- 错误状态 -->
+          <div class="result-error" id="error-state" hidden>
+            <p id="error-message">诗兴正浓，稍候再试。</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-retry">重试</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- 历史抽屉 -->
+    <div class="drawer-mask" id="drawer-mask" hidden></div>
+    <aside class="drawer" id="history-drawer" aria-labelledby="drawer-title" aria-hidden="true">
+      <header class="drawer-head">
+        <h2 id="drawer-title">我的诗笺</h2>
+        <button type="button" class="icon-btn" id="close-history" aria-label="关闭">×</button>
+      </header>
+      <div class="drawer-body" id="history-list"></div>
+      <footer class="drawer-foot">
+        <p class="hint">收藏保存在本机浏览器，清除浏览器数据会一并清空。</p>
+      </footer>
+    </aside>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/app.js" type="module"></script>
+  </body>
+</html>

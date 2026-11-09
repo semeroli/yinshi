@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>管理后台 · 诗境</title>
+    <meta name="theme-color" content="#F7F4EC" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/admin.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <a href="/app.html">创作台</a>
+          <a href="/blog.html">诗话</a>
+          <a href="/admin-posts.html">文章</a>
+          <span class="user-name" id="admin-name"></span>
+          <button type="button" id="btn-logout">退出</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap admin-main">
+      <div class="admin-head">
+        <div>
+          <span class="eyebrow">管理</span>
+          <h1>注册用户</h1>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-refresh">刷新</button>
+      </div>
+
+      <section class="stats" id="stats" hidden>
+        <div class="stat">
+          <span class="stat-label">总用户</span>
+          <strong id="stat-total">0</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">管理员</span>
+          <strong id="stat-admins">0</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">活跃</span>
+          <strong id="stat-active">0</strong>
+        </div>
+      </section>
+
+      <section class="table-panel" id="table-panel" hidden>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">用户名</th>
+                <th scope="col">邮箱</th>
+                <th scope="col">角色</th>
+                <th scope="col">注册时间</th>
+                <th scope="col">最近登录</th>
+                <th scope="col">状态</th>
+              </tr>
+            </thead>
+            <tbody id="user-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="state-box" id="state-box">
+        <span class="spinner"></span>
+        <p>正在读取用户列表…</p>
+      </div>
+
+      <div class="state-box" id="forbidden" hidden>
+        <div class="seal" style="--seal-size: 46px; font-size: 22px; opacity: 0.4; box-shadow: none">禁</div>
+        <h2>无权访问</h2>
+        <p>此页面仅管理员可见。如需权限，请在服务端设置 <code>ADMIN_USERNAME</code> 并以该用户名注册。</p>
+        <a class="btn btn-ghost btn-sm" href="/app.html">回到创作台</a>
+      </div>
+    </main>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/admin.js" type="module"></script>
+  </body>
+</html>

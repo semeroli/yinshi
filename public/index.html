@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>诗境 · 以君之意，成君之诗</title>
+    <meta
+      name="description"
+      content="诗境：输入一段意境描述，即可得到一首格律合规的近体绝句。意象解析、格律成诗、程序校验三段流水线。"
+    />
+    <meta name="theme-color" content="#F7F4EC" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/landing.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <a href="#works">示例</a>
+          <a href="#how">三步</a>
+          <a href="/blog.html">诗话</a>
+          <a href="/login.html" data-guest>登录</a>
+          <a href="/app.html" class="btn btn-primary btn-sm" style="margin-left: 8px">开始题诗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- 首屏 -->
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <span class="eyebrow">AI 近体诗创作</span>
+            <h1>
+              以君之意<br />
+              成君之诗
+            </h1>
+            <p class="hero-desc">
+              写下一段心境，描几笔眼前景。诗境先析意象，再依格律成篇，最后逐字校对——五言七言，皆可入韵。
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="/app.html">
+                开始题诗
+                <span aria-hidden="true">→</span>
+              </a>
+              <a class="btn btn-ghost" href="#works">先看看示例</a>
+            </div>
+            <ul class="hero-meta">
+              <li><b>①</b>意象解析</li>
+              <li><b>②</b>格律成诗</li>
+              <li><b>③</b>程序校验</li>
+            </ul>
+          </div>
+
+          <div class="hero-art" aria-hidden="true">
+            <div class="scroll-paper">
+              <div class="scroll-title">
+                <span>诗</span><span>境</span>
+              </div>
+              <div class="scroll-lines">
+                <span></span><span></span><span></span><span></span>
+              </div>
+              <div class="scroll-seal seal">境</div>
+            </div>
+            <p class="hero-art-note">宣纸 · 朱砂 · 墨</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 示例作品 -->
+      <section class="section works" id="works">
+        <div class="wrap">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">示例作品</span>
+              <h2>同样的意境，可以这样写</h2>
+            </div>
+            <p class="section-note">横滑查看更多 · 均为演示数据</p>
+          </div>
+
+          <div class="works-track" role="list">
+            <article class="work-card" role="listitem">
+              <header>
+                <h3>江夜寄远</h3>
+                <span class="work-tag">五言绝句 · 婉约</span>
+              </header>
+              <div class="work-lines">
+                <p>孤灯照晚汀，</p>
+                <p>寒渚夜潮生。</p>
+                <p>遥忆同舟客，</p>
+                <p>天涯共月明。</p>
+              </div>
+              <footer>
+                <span class="chip">孤灯</span><span class="chip">寒江</span><span class="chip">远月</span>
+              </footer>
+            </article>
+
+            <article class="work-card" role="listitem">
+              <header>
+                <h3>塞上曲</h3>
+                <span class="work-tag">七言绝句 · 豪放</span>
+              </header>
+              <div class="work-lines">
+                <p>大漠风高卷暮旌，</p>
+                <p>长河落日浸孤城。</p>
+                <p>挥鞭直指燕然石，</p>
+                <p>待勒功名照汗青。</p>
+              </div>
+              <footer>
+                <span class="chip">大漠</span><span class="chip">长河</span><span class="chip">旌旗</span>
+              </footer>
+            </article>
+
+            <article class="work-card" role="listitem">
+              <header>
+                <h3>山居</h3>
+                <span class="work-tag">五言绝句 · 冲淡</span>
+              </header>
+              <div class="work-lines">
+                <p>空山新雨歇，</p>
+                <p>松径落云深。</p>
+                <p>独坐听流泉，</p>
+                <p>苔痕上石心。</p>
+              </div>
+              <footer>
+                <span class="chip">空山</span><span class="chip">松径</span><span class="chip">苔痕</span>
+              </footer>
+            </article>
+
+            <article class="work-card" role="listitem">
+              <header>
+                <h3>秋夜寄怀</h3>
+                <span class="work-tag">七言绝句 · 婉约</span>
+              </header>
+              <div class="work-lines">
+                <p>一庭疏雨打梧桐，</p>
+                <p>灯影依稀照壁空。</p>
+                <p>欲寄相思无雁字，</p>
+                <p>半窗凉月半帘栊。</p>
+              </div>
+              <footer>
+                <span class="chip">疏雨</span><span class="chip">梧桐</span><span class="chip">凉月</span>
+              </footer>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 三步成诗 -->
+      <section class="section how" id="how">
+        <div class="wrap">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">创作流程</span>
+              <h2>一段描述，三道工序</h2>
+            </div>
+            <p class="section-note">意象先到，诗才落笔</p>
+          </div>
+
+          <ol class="steps">
+            <li class="step">
+              <span class="step-no">壹</span>
+              <h3>写下一段意境</h3>
+              <p>“秋夜江边，孤舟灯火，思念远人。”几十字即可，越具体越好。</p>
+              <div class="step-demo">
+                <div class="demo-line"></div>
+                <div class="demo-line short"></div>
+                <div class="demo-line"></div>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-no">贰</span>
+              <h3>得到意象与诗</h3>
+              <p>先给出 3~5 个核心意象，再据体裁与风格成诗，逐句渐显。</p>
+              <div class="step-demo chips-demo">
+                <span class="chip on">孤灯</span><span class="chip">寒江</span><span class="chip">夜潮</span
+                ><span class="chip">远月</span>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-no">叁</span>
+              <h3>校验、释义、收藏</h3>
+              <p>程序核对每句字数与二四句韵脚，附白话释义，一键收进诗笺。</p>
+              <div class="step-demo check-demo">
+                <span>字数 5/5/5/5</span><span class="ok">韵脚 生 · 明</span>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="section cta-band">
+        <div class="wrap cta-inner">
+          <div>
+            <h2>此刻心绪，正好入诗</h2>
+            <p>注册后即可创作，作品可收藏、可回溯。</p>
+          </div>
+          <div class="cta-actions">
+            <a class="btn btn-primary" href="/register.html">免费注册</a>
+            <a class="btn btn-ghost" href="/login.html">已有账号</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div class="brand">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </div>
+        <p>演示项目 · 意象解析 / 格律成诗 / 程序校验</p>
+        <p class="footer-note">本站示例诗作由演示诗词库提供，非真实用户作品</p>
+      </div>
+    </footer>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/landing.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="诗境">
+  <defs>
+    <linearGradient id="seal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#CE3034" />
+      <stop offset="1" stop-color="#A81E22" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#seal)" />
+  <rect x="23" y="23" width="466" height="466" rx="92" fill="none" stroke="#F7F4EC" stroke-opacity="0.36" stroke-width="6" />
+  <text
+    x="256"
+    y="256"
+    fill="#F7F4EC"
+    font-family="'Songti SC','STSong','Source Han Serif SC','Noto Serif SC',serif"
+    font-size="330"
+    font-weight="600"
+    text-anchor="middle"
+    dominant-baseline="central"
+  >诗</text>
+</svg>

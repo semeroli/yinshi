@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>诗话 · 诗境</title>
+    <meta name="description" content="诗境诗话：关于近体诗格律、意象与创作的记录。" />
+    <meta name="theme-color" content="#F7F4EC" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/blog.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <a href="/">首页</a>
+          <a href="/app.html">创作台</a>
+          <a href="/login.html" id="nav-auth">登录</a>
+          <a href="/app.html" class="btn btn-primary btn-sm" style="margin-left: 8px">开始题诗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap blog-main">
+      <section class="blog-hero">
+        <div>
+          <span class="eyebrow">诗话</span>
+          <h1>诗话</h1>
+          <p>关于近体诗的格律、意象与遣词，也关于「诗境」这个项目本身。慢读，不必急。</p>
+        </div>
+        <div class="hero-seal seal" aria-hidden="true">话</div>
+      </section>
+
+      <div id="post-grid" class="post-grid" aria-live="polite"></div>
+
+      <div class="blog-empty" id="empty-state" hidden>
+        <strong>尚无诗话</strong>
+        文章正在酝酿中，稍后再来。
+      </div>
+
+      <div class="state-box-article" id="error-state" hidden>
+        <h2>读取失败</h2>
+        <p id="error-message">请稍后重试。</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div class="brand">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </div>
+        <p>以君之意，成君之诗</p>
+      </div>
+    </footer>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/blog.js" type="module"></script>
+  </body>
+</html>

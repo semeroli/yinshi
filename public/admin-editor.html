@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>写诗话 · 诗境</title>
+    <meta name="theme-color" content="#F7F4EC" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/admin.css" />
+    <link rel="stylesheet" href="/assets/css/blog.css" />
+    <link rel="stylesheet" href="/assets/css/editor.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <nav class="topnav" aria-label="主导航">
+          <a href="/app.html">创作台</a>
+          <a href="/blog.html">诗话</a>
+          <a href="/admin-posts.html">文章</a>
+          <a href="/admin.html">用户</a>
+          <span class="user-name" id="admin-name"></span>
+          <button type="button" id="btn-logout">退出</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap editor-main">
+      <div class="admin-head">
+        <div>
+          <span class="eyebrow" id="editor-eyebrow">新建</span>
+          <h1 id="editor-title">写一篇诗话</h1>
+        </div>
+        <div class="head-actions">
+          <a class="btn btn-ghost btn-sm" href="/admin-posts.html">返回列表</a>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-save">保存</button>
+        </div>
+      </div>
+
+      <div class="editor-grid">
+        <section class="panel editor-form-panel" aria-labelledby="form-title">
+          <h2 id="form-title" class="visually-hidden">文章信息</h2>
+          <form id="post-form" novalidate>
+            <div class="field">
+              <label for="title">标题</label>
+              <input id="title" class="input" name="title" maxlength="80" placeholder="例如：五言绝句的平仄入门" />
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="slug">链接别名 <span class="optional">选填</span></label>
+                <input id="slug" class="input" name="slug" maxlength="80" placeholder="wuyan-pingze" />
+                <p class="hint" id="slug-preview">留空则按标题自动生成</p>
+              </div>
+              <div class="field">
+                <label for="tags">标签 <span class="optional">逗号分隔</span></label>
+                <input id="tags" class="input" name="tags" maxlength="120" placeholder="格律, 意象" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="summary">摘要</label>
+              <textarea
+                id="summary"
+                class="input summary-input"
+                name="summary"
+                maxlength="200"
+                rows="2"
+                placeholder="列表卡片上显示的一两句话"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <label for="cover_url">封面图链接 <span class="optional">图床 http(s) 地址</span></label>
+              <div class="cover-input">
+                <input
+                  id="cover_url"
+                  class="input"
+                  name="cover_url"
+                  maxlength="2000"
+                  placeholder="https://img.example.com/cover.jpg"
+                />
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-cover-clear">清除</button>
+              </div>
+              <div class="cover-preview" id="cover-preview" hidden>
+                <img id="cover-img" alt="封面预览" />
+                <span class="cover-tip" id="cover-tip"></span>
+              </div>
+              <p class="hint">建议 16:9 或 21:9 横图，可直接粘贴图床外链。</p>
+            </div>
+
+            <div class="field">
+              <div class="field-head">
+                <label for="content">正文 <span class="optional">Markdown</span></label>
+                <div class="editor-tools">
+                  <button type="button" class="tool" data-insert="## " title="标题">H2</button>
+                  <button type="button" class="tool" data-insert="> " title="引用">❝</button>
+                  <button type="button" class="tool" data-insert="- " title="列表">≡</button>
+                  <button type="button" class="tool" data-insert="**粗体**" title="粗体">B</button>
+                  <button type="button" class="tool" data-insert="![](https://)" title="图片">▣</button>
+                </div>
+              </div>
+              <textarea
+                id="content"
+                class="textarea content-input"
+                name="content"
+                rows="18"
+                placeholder="## 小标题&#10;&#10;正文段落……&#10;&#10;> 引用一句诗"
+              ></textarea>
+              <div class="counter-row">
+                <span class="hint" id="content-count">0 字</span>
+                <span class="hint">写完可点右侧预览核对排版</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">发布状态</span>
+              <div class="segmented segmented-sm" role="radiogroup" aria-label="发布状态" style="width: 100%">
+                <button type="button" class="seg is-active" data-status="draft" role="radio" aria-checked="true">
+                  存为草稿
+                </button>
+                <button type="button" class="seg" data-status="published" role="radio" aria-checked="false">
+                  立即发布
+                </button>
+              </div>
+            </div>
+
+            <p class="error-text" id="form-error" role="alert"></p>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="btn-save-draft">保存草稿</button>
+              <button type="submit" class="btn btn-primary" id="btn-submit">发布</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel preview-panel" aria-labelledby="preview-title">
+          <div class="preview-head">
+            <h2 id="preview-title">实时预览</h2>
+            <span class="hint" id="preview-state">未保存</span>
+          </div>
+          <div class="preview-scroll">
+            <article class="preview-article">
+              <img class="preview-cover" id="preview-cover" alt="" hidden />
+              <h1 id="preview-title-text">未命名诗话</h1>
+              <div class="article-meta preview-meta">
+                <span id="preview-author">admin</span>
+                <span>·</span>
+                <time id="preview-date"></time>
+                <span id="preview-tags"></span>
+              </div>
+              <div class="prose" id="preview-body">
+                <p class="preview-placeholder">正文预览会显示在这里。</p>
+              </div>
+            </article>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/admin-editor.js" type="module"></script>
+  </body>
+</html>

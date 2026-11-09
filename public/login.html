@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>登录 · 诗境</title>
+    <meta name="theme-color" content="#F7F4EC" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/auth.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-shell">
+      <aside class="auth-aside" aria-hidden="true">
+        <a class="brand" href="/">
+          <span class="seal" aria-hidden="true">诗</span>
+          <span>诗境</span>
+        </a>
+        <blockquote class="aside-quote">
+          <p>孤灯照晚汀，</p>
+          <p>寒渚夜潮生。</p>
+          <p>遥忆同舟客，</p>
+          <p>天涯共月明。</p>
+          <cite>—— 演示作品《江夜寄远》</cite>
+        </blockquote>
+        <p class="aside-note">以君之意，成君之诗</p>
+      </aside>
+
+      <section class="auth-main">
+        <div class="auth-card">
+          <span class="eyebrow">欢迎回来</span>
+          <h1>登录诗境</h1>
+          <p class="auth-sub">继续未完的诗笺。</p>
+
+          <form id="auth-form" novalidate>
+            <div class="field">
+              <label for="username">用户名</label>
+              <input id="username" class="input" name="username" autocomplete="username" placeholder="请输入用户名" />
+            </div>
+            <div class="field">
+              <label for="password">密码</label>
+              <div class="pwd-wrap">
+                <input
+                  id="password"
+                  class="input"
+                  type="password"
+                  name="password"
+                  autocomplete="current-password"
+                  placeholder="请输入密码"
+                />
+                <button type="button" class="pwd-toggle" aria-label="显示密码">显示</button>
+              </div>
+            </div>
+            <div id="turnstile-slot"></div>
+            <p class="error-text" id="auth-error" role="alert"></p>
+            <button type="submit" class="btn btn-primary btn-block" id="auth-submit">登录</button>
+            <p class="auth-switch">还没有账号？<a href="/register.html">立即注册</a></p>
+          </form>
+        </div>
+        <a class="back-home" href="/">← 返回首页</a>
+      </section>
+    </main>
+
+    <script src="/assets/js/api.js" type="module"></script>
+    <script src="/assets/js/auth.js" type="module" data-page="login"></script>
+  </body>
+</html>

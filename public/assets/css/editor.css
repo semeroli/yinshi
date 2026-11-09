@@ -1,0 +1,255 @@
+/* ============ 文章编辑器 ============ */
+
+.editor-main {
+  padding: clamp(24px, 4vw, 48px) 24px 88px;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.editor-form-panel .field:last-of-type {
+  margin-bottom: 8px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.summary-input {
+  resize: vertical;
+  min-height: 66px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.cover-input {
+  display: flex;
+  gap: 8px;
+}
+
+.cover-input .input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.cover-preview {
+  margin-top: 10px;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--paper-2);
+  aspect-ratio: 16 / 9;
+}
+
+.cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-preview img.broken {
+  opacity: 0;
+}
+
+.cover-tip {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: rgba(43, 43, 43, 0.62);
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cover-tip.error {
+  background: var(--cinnabar-deep);
+}
+
+.editor-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.tool {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.6);
+  transition: all var(--dur) var(--ease);
+}
+
+.tool:hover {
+  color: var(--cinnabar);
+  border-color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+}
+
+.content-input {
+  font-family: var(--font-mono);
+  font-size: 13.2px;
+  line-height: 1.9;
+  min-height: 380px;
+  resize: vertical;
+  letter-spacing: 0;
+}
+
+.counter-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.form-actions .btn {
+  flex: 1;
+}
+
+/* 预览 */
+.preview-panel {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.preview-head h2 {
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  color: var(--ink-2);
+}
+
+.preview-scroll {
+  overflow-y: auto;
+  padding: 24px 26px 32px;
+}
+
+.preview-article h1 {
+  font-size: clamp(22px, 2.4vw, 28px);
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+  margin-bottom: 14px;
+}
+
+.preview-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  margin-bottom: 20px;
+  display: block;
+}
+
+.preview-meta {
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+}
+
+.preview-meta .tag {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+}
+
+.preview-article .prose {
+  font-size: 14.5px;
+  line-height: 1.95;
+}
+
+.preview-article .prose h2 {
+  font-size: 19px;
+}
+
+.preview-article .prose h3 {
+  font-size: 16.5px;
+}
+
+.preview-placeholder {
+  color: var(--ink-4);
+  font-size: 13px;
+}
+
+@media (max-width: 1024px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .preview-panel {
+    position: static;
+    max-height: none;
+  }
+  .preview-scroll {
+    max-height: 520px;
+  }
+}
+
+@media (max-width: 640px) {
+  .editor-main {
+    padding: 22px 18px 64px;
+  }
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .admin-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .content-input {
+    min-height: 300px;
+  }
+  .preview-scroll {
+    padding: 18px 16px 24px;
+  }
+}

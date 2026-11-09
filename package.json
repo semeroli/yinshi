@@ -1,0 +1,14 @@
+{
+  "name": "shijing-poem-app",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "诗境 · 意境成诗 —— 三段式古诗生成应用（本地服务版）",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
