@@ -16,6 +16,20 @@ export {
 
 const TIMEOUT_MS = 70000;
 
+/** 兼容不同厂商的返回结构（content / reasoning_content / text） */
+function pickContent(data) {
+  const choice = data?.choices?.[0];
+  return (
+    choice?.message?.content ||
+    choice?.message?.reasoning_content ||
+    choice?.text ||
+    data?.data?.choices?.[0]?.message?.content ||
+    data?.data?.choices?.[0]?.text ||
+    ''
+  );
+}
+
+
 async function postJson(url, headers, body) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -157,13 +171,13 @@ async function callSenseNova(messages, { temperature, top_p, max_tokens }) {
     let content = '';
     try {
       const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } });
-      content = data?.choices?.[0]?.message?.content || '';
+      content = pickContent(data);
     } catch {
       content = '';
     }
     if (!content) {
       const data = await postJson(url, headers, payload);
-      content = data?.choices?.[0]?.message?.content || '';
+      content = pickContent(data);
     }
     if (!content) throw new Error('商汤返回为空');
     return content;
