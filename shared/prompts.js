@@ -88,11 +88,34 @@ export function fixUser(lines, form, issues) {
 【检测问题】${issues.join('；') || '无'}`;
 }
 
-/** 从模型返回文本中稳健地提取 JSON */
+/** 从模型返回文本中稳健地提取 JSON（含常见格式修复） */
 export function parseJson(text) {
-  const cleaned = String(text || '').replace(/```(json)?/gi, '').trim();
-  const s = cleaned.indexOf('{');
-  const e = cleaned.lastIndexOf('}');
+  const raw = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/```(json)?/gi, '')
+    .trim();
+  const s = raw.indexOf('{');
+  const e = raw.lastIndexOf('}');
   if (s === -1 || e === -1) throw new Error('模型返回中未找到 JSON');
-  return JSON.parse(cleaned.slice(s, e + 1));
+
+  const body = raw.slice(s, e + 1);
+  try {
+    return JSON.parse(body);
+  } catch {
+    const repaired = body
+      // 去掉行内注释
+      .replace(/^\s*\/\/.*$/gm, '')
+      // 中文标点误用（仅结构位置）
+      .replace(/：(?=\s*["[{\d])/g, ':')
+      .replace(/，(?=\s*["[{\d])/g, ',')
+      // 尾随逗号
+      .replace(/,\s*([}\]])/g, '$1')
+      // 控制字符
+      .replace(/[\u0000-\u001f]+/g, ' ');
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw new Error(`模型返回不是合法 JSON：${body.slice(0, 80)}…`);
+    }
+  }
 }
