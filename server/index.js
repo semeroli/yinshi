@@ -24,6 +24,7 @@ import {
   fixUser,
   parseJson,
   chat,
+  chatJson,
   hasOnlineModel,
 } from './model.js';
 import {
@@ -129,14 +130,13 @@ async function runImagery({ description, form, style }) {
   let fallbackReason = '';
   if (!DEMO_MODE) {
     try {
-      const { content, channel: ch } = await chat(
+      const { data: parsed, channel: ch } = await chatJson(
         [
           { role: 'system', content: IMAGERY_SYSTEM },
           { role: 'user', content: imageryUser(description, form, style) },
         ],
-        { temperature: 0.3, top_p: 0.8, max_tokens: 200 },
+        { temperature: 0.3, top_p: 0.8, max_tokens: 400 },
       );
-      const parsed = parseJson(content);
       if (Array.isArray(parsed.core_imagery) && parsed.core_imagery.length) {
         imagery = parsed;
         channel = ch;
@@ -187,7 +187,7 @@ async function runPoem({ imagery, form, style, strict, avoid }) {
   let fallbackReason = '';
   if (!DEMO_MODE) {
     try {
-      const { content, channel: ch } = await chat(
+      const { data: parsed, channel: ch } = await chatJson(
         [
           { role: 'system', content: POEM_SYSTEM },
           {
@@ -200,9 +200,9 @@ async function runPoem({ imagery, form, style, strict, avoid }) {
             }),
           },
         ],
-        { temperature: 0.85, top_p: 0.9, max_tokens: 400 },
+        { temperature: 0.85, top_p: 0.9, max_tokens: 700 },
       );
-      poem = parseJson(content);
+      poem = parsed;
       channel = ch;
     } catch (err) {
       fallbackReason = err.message;

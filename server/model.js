@@ -2,6 +2,8 @@
  * 服务端模型适配（Node）：魔搭 ModelScope（主）→ 商汤日日新（备）
  * 未配置任何 Key 时由上层降级到本地演示库（poems.js）
  */
+import { parseJson } from '../shared/prompts.js';
+
 export {
   IMAGERY_SYSTEM,
   POEM_SYSTEM,
@@ -220,4 +222,24 @@ export async function chat(messages, params, model) {
   const err = new Error(errors.length ? errors.join(' | ') : '未配置模型 Key');
   err.fallback = true;
   throw err;
+}
+
+/** 结构化输出：解析失败时补一句硬约束重试一次 */
+export async function chatJson(messages, params, model) {
+  const first = await chat(messages, params, model);
+  try {
+    return { ...first, data: parseJson(first.content) };
+  } catch (err) {
+    const retry = await chat(
+      messages.concat([
+        {
+          role: 'user',
+          content: '请只输出一个 JSON 对象，第一个字符必须是 {，不要任何解释，不要 Markdown 代码围栏。',
+        },
+      ]),
+      { ...params, temperature: 0.1 },
+      model,
+    );
+    return { ...retry, data: parseJson(retry.content) };
+  }
 }

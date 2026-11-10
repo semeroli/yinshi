@@ -2,6 +2,8 @@
  * Edge 端模型适配（WebCrypto）：魔搭 ModelScope（主）→ 商汤日日新（备）
  * 未配置 Key 时抛出 fallback 标记，由上层降级到本地演示库
  */
+import { parseJson } from '../../shared/prompts.js';
+
 export {
   IMAGERY_SYSTEM,
   POEM_SYSTEM,
@@ -219,4 +221,25 @@ export async function chat(env, messages, params) {
   const err = new Error(errors.length ? errors.join(' | ') : '未配置模型 Key');
   err.fallback = true;
   throw err;
+}
+
+/** 结构化输出：解析失败时补一句硬约束重试一次 */
+export async function chatJson(env, messages, params) {
+  const first = await chat(env, messages, params);
+  try {
+    return { ...first, data: parseJson(first.content) };
+  } catch (err) {
+    const retry = await chat(
+      env,
+      [
+        ...messages,
+        {
+          role: 'user',
+          content: '请只输出一个 JSON 对象，第一个字符必须是 {，不要任何解释，不要 Markdown 代码围栏。',
+        },
+      ],
+      { ...params, temperature: 0.1 },
+    );
+    return { ...retry, data: parseJson(retry.content) };
+  }
 }
