@@ -12,4 +12,4 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "yinshi-db"
-database_id = "29b84e17-4fc8-45e8-8da0-edafe709ee01"
+database_id = "9b71a641-1fe2-47c8-a38b-29237acfc9dd"

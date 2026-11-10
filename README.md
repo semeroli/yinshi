@@ -6,9 +6,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 访问地址 | https://yinshi-80u.pages.dev |
-| Pages 项目 | `yinshi`（Cloudflare 账号 qianmo，直传型项目） |
-| D1 数据库 | `yinshi-db` · `29b84e17-4fc8-45e8-8da0-edafe709ee01` |
+| 访问地址 | 以 Cloudflare 后台 Pages 项目域名为准 |
+| Pages 项目 | `yinshi`（账号 Soralabe@126.com，Git 集成项目，推送 main 自动部署） |
+| D1 数据库 | `yinshi-db` · `9b71a641-1fe2-47c8-a38b-29237acfc9dd` |
 | 管理员账号 | `admin` / `admin123456`（登录后请尽快改密码） |
 | 环境变量 | `JWT_SECRET`（secret）、`ADMIN_USERNAME=admin`、`PBKDF2_ITERATIONS=100000` |
 
