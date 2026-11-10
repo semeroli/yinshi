@@ -2,6 +2,26 @@
 
 移动端优先的古诗生成应用：用户写下一段意境描述，应用先解析意象，再依体裁与格律成诗，最后由程序逐字校验。设计依据 `古诗生成提示词设计方案 v2.0`。
 
+## 线上环境（已部署）
+
+| 项 | 值 |
+| --- | --- |
+| 访问地址 | https://yinshi-80u.pages.dev |
+| Pages 项目 | `yinshi`（Cloudflare 账号 qianmo，直传型项目） |
+| D1 数据库 | `yinshi-db` · `29b84e17-4fc8-45e8-8da0-edafe709ee01` |
+| 管理员账号 | `admin` / `admin123456`（登录后请尽快改密码） |
+| 环境变量 | `JWT_SECRET`（secret）、`ADMIN_USERNAME=admin`、`PBKDF2_ITERATIONS=100000` |
+
+更新线上版本：
+
+```bash
+npm run build     # 输出 dist/
+npx wrangler pages deploy dist --project-name=yinshi --branch=main
+```
+
+> 该项目为「直传型」Pages 项目，推送到 GitHub 不会自动部署，需要执行上面的命令；
+> 若想要 Git 自动部署，可在 Cloudflare 后台新建一个 Git 集成项目并指向本仓库。
+
 ## 功能
 
 | 模块 | 说明 |
