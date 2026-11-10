@@ -8,8 +8,8 @@ pages_build_output_dir = "dist"
 # 1) 创建数据库：npx wrangler d1 create yinshi-db
 # 2) 把返回的 database_id 填到下面
 # 3) 初始化表结构：npx wrangler d1 execute yinshi-db --remote --file=./schema.sql
-# 4) 取消下面四行注释后重新部署
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "yinshi-db"
-# database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# 4) 重新部署
+[[d1_databases]]
+binding = "DB"
+database_name = "yinshi-db"
+database_id = "29b84e17-4fc8-45e8-8da0-edafe709ee01"
