@@ -14,7 +14,7 @@ export {
   parseJson,
 } from '../../shared/prompts.js';
 
-const TIMEOUT_MS = 45000;
+const TIMEOUT_MS = 70000;
 const enc = new TextEncoder();
 
 function b64url(data) {

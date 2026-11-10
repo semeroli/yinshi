@@ -149,7 +149,7 @@ async function runPoem(env, { imagery, form, style, strict, avoid }) {
             content: poemUser(imagery, { form: finalForm, style: finalStyle, strict, avoid }),
           },
         ],
-        { temperature: 0.85, top_p: 0.9, max_tokens: 700 },
+        { temperature: 0.85, top_p: 0.9, max_tokens: 400 },
       );
       poem = parsed;
       channel = ch;
