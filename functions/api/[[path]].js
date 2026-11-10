@@ -12,6 +12,7 @@ import {
   fixUser,
   parseJson,
   chat,
+  hasOnlineModel,
 } from '../lib/model.js';
 import { getStore, publicUser, publicPost } from '../lib/store.js';
 import {
@@ -42,7 +43,7 @@ async function readJson(request) {
 }
 
 function isDemo(env) {
-  return !env.MODELSCOPE_API_KEY && !env.SENSENOVA_API_KEY && !(env.SENSENOVA_AK && env.SENSENOVA_SK);
+  return !hasOnlineModel(env);
 }
 
 function secretOf(env) {
@@ -256,7 +257,7 @@ export async function onRequest(context) {
       return json({
         turnstileSiteKey: env.TURNSTILE_SITE_KEY || '',
         demo: isDemo(env),
-        model: isDemo(env) ? '本地演示库' : env.MODELSCOPE_MODEL || 'Qwen2.5-72B-Instruct',
+        model: isDemo(env) ? '本地演示库' : env.LLM_MODEL || env.MODELSCOPE_MODEL || '在线模型',
       });
     }
 

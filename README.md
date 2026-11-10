@@ -59,7 +59,8 @@ PORT=5180 ADMIN_USERNAME=admin node server/index.js
 
 | 变量 | 作用 |
 | --- | --- |
-| `MODELSCOPE_API_KEY` | 魔搭 ModelScope 主通道（OpenAI 兼容） |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | **通用 OpenAI 兼容通道（推荐）**，如 DeepSeek：`https://api.deepseek.com/v1` + `deepseek-chat` |
+| `MODELSCOPE_API_KEY` | 魔搭 ModelScope 通道（模型会上下架，`MODELSCOPE_MODEL` 可填多个候选） |
 | `SENSENOVA_API_KEY` | 商汤日日新备用通道（单 Key，直接作为 Bearer） |
 | `SENSENOVA_AK` / `SENSENOVA_SK` | 商汤日日新备用通道（AK/SK 换 JWT，与单 Key 二选一） |
 | `JWT_SECRET` | 会话签名密钥，生产必须替换 |

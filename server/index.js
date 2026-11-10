@@ -24,6 +24,7 @@ import {
   fixUser,
   parseJson,
   chat,
+  hasOnlineModel,
 } from './model.js';
 import {
   createUser,
@@ -50,10 +51,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT || 0);
-const DEMO_MODE =
-  !process.env.MODELSCOPE_API_KEY &&
-  !process.env.SENSENOVA_API_KEY &&
-  !(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK);
+const DEMO_MODE = !hasOnlineModel();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -270,7 +268,7 @@ async function handleApi(req, res, pathname, url) {
     return send(res, 200, {
       turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '',
       demo: DEMO_MODE,
-      model: DEMO_MODE ? '本地演示库' : process.env.MODELSCOPE_MODEL || 'Qwen2.5-72B-Instruct',
+      model: DEMO_MODE ? '本地演示库' : process.env.LLM_MODEL || process.env.MODELSCOPE_MODEL || '在线模型',
     });
   }
 

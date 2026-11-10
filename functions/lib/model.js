@@ -42,6 +42,31 @@ async function postJson(url, headers, body) {
   }
 }
 
+/**
+ * 通用 OpenAI 兼容通道（DeepSeek / 智谱 / 通义 / OpenAI / 自建网关均可）
+ * 只需配置 LLM_BASE_URL、LLM_API_KEY，模型名用 LLM_MODEL
+ */
+async function callOpenAICompatible(env, messages, { temperature, top_p, max_tokens }) {
+  const base = String(env.LLM_BASE_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('NO_LLM_BASE_URL');
+
+  const data = await postJson(
+    `${base}/chat/completions`,
+    { Authorization: `Bearer ${env.LLM_API_KEY || ''}` },
+    {
+      model: env.LLM_MODEL || 'deepseek-chat',
+      messages,
+      temperature,
+      top_p,
+      max_tokens,
+      response_format: { type: 'json_object' },
+    },
+  );
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error('模型返回为空');
+  return content;
+}
+
 /** 魔搭服务端模型会上下架：MODELSCOPE_MODEL 可填多个候选，未命中时按链重试 */
 const DEFAULT_MODELS = [
   'Qwen/Qwen3-8B',
@@ -96,6 +121,11 @@ export function hasSenseNova(env) {
   return Boolean(env.SENSENOVA_API_KEY) || Boolean(env.SENSENOVA_AK && env.SENSENOVA_SK);
 }
 
+/** 是否配置了任意在线模型通道 */
+export function hasOnlineModel(env) {
+  return Boolean(env.LLM_BASE_URL && env.LLM_API_KEY) || Boolean(env.MODELSCOPE_API_KEY) || hasSenseNova(env);
+}
+
 /** 商汤日日新：优先单 Key（Bearer），否则 AK/SK 换 JWT */
 async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) {
   let token = env.SENSENOVA_API_KEY || '';
@@ -130,6 +160,15 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
 /** 统一入口，返回 { content, channel } */
 export async function chat(env, messages, params) {
   const errors = [];
+
+  if (env.LLM_BASE_URL && env.LLM_API_KEY) {
+    try {
+      return { content: await callOpenAICompatible(env, messages, params), channel: 'llm' };
+    } catch (err) {
+      errors.push(`llm: ${err.message}`);
+    }
+  }
+
   if (env.MODELSCOPE_API_KEY) {
     try {
       return { content: await callModelScope(env, messages, params), channel: 'modelscope' };
