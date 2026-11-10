@@ -11,3 +11,8 @@ dev/*.json
 # Python
 __pycache__/
 *.pyc
+
+# 构建产物
+dist/
+.wrangler/
+.dev.vars

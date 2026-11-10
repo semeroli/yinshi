@@ -104,13 +104,56 @@ poem-app/
 
 ## 部署到 Cloudflare Pages
 
-当前版本是可运行于本机的 Node 实现，数据库为 JSON 文件。迁移到 Pages Functions 时：
+仓库已内置 Pages 适配：`functions/api/[[path]].js` 提供全部接口，`scripts/build.mjs` 把 `public/` 输出到 `dist/`。
 
-1. `wrangler.toml` 绑定 D1（`DB`）与 KV（缓存），执行 `schema.sql` 建表；
-2. 把 `server/index.js` 的路由改写为 `functions/api/*.js`，`store.js` 的读写换成 D1 语句（表结构已对齐）；
-3. 密钥全部用 `wrangler pages secret put` 注入：`MODELSCOPE_API_KEY`、`SENSENOVA_AK`、`SENSENOVA_SK`、`TURNSTILE_SECRET`、`JWT_SECRET`；
-4. `public/` 作为构建输出目录，无需构建命令；
-5. 绑定自定义域名后开启 Cloudflare Managed Challenge，实现"访问域名先人机验证"。
+### 1. 构建配置
+
+| 项 | 值 |
+| --- | --- |
+| 构建命令 | `npm run build` |
+| 输出目录 | `dist`（`wrangler.toml` 的 `pages_build_output_dir` 已声明） |
+| 兼容性标志 | `nodejs_compat` |
+
+### 2. 创建并初始化 D1
+
+```bash
+npx wrangler login
+npx wrangler d1 create yinshi-db          # 复制返回的 database_id
+# 把 database_id 填入 wrangler.toml 的 [[d1_databases]] 并取消该段注释
+npx wrangler d1 execute yinshi-db --remote --file=./schema.sql
+```
+
+> 未绑定 D1 时接口会自动降级为「实例内存」模式：功能可用，但实例重启后数据清空（`/api/health` 的 `persistent` 字段可判断）。
+
+### 3. 环境变量（Pages 项目 → Settings → Variables and Secrets）
+
+| 变量 | 说明 |
+| --- | --- |
+| `ADMIN_USERNAME` | 该用户名注册即自动成为管理员 |
+| `JWT_SECRET` | 会话签名密钥，务必替换为随机串 |
+| `MODELSCOPE_API_KEY` | 可选，配置后切换为真实模型通道 |
+| `SENSENOVA_AK` / `SENSENOVA_SK` | 可选，备用通道 |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | 可选，人机验证 |
+
+### 4. 本地验证 Pages 运行时
+
+```bash
+npm run preview        # 等价于 wrangler pages dev dist --d1 DB
+```
+
+### 5. 自动部署
+
+推送到 `main` 即触发 Pages 构建；构建命令与输出目录按上表配置即可，无需额外脚本。
+
+### 与本地 Node 版的差异
+
+| 能力 | 本地 Node（server/） | Pages Functions（functions/） |
+| --- | --- | --- |
+| 存储 | `data/db.json` | D1（未绑定则内存） |
+| 密码哈希 | `node:crypto` PBKDF2 | WebCrypto PBKDF2（10 万次） |
+| 会话 | HMAC 签名 Cookie | 同左，WebCrypto 签名 |
+| 生成缓存 / 频控 | 进程内存 | 实例内存（多实例下为尽力而为） |
+| 提示词 | `shared/prompts.js`（两端共用） | 同左 |
 
 ## 验收清单
 

@@ -1,0 +1,15 @@
+# Cloudflare Pages 项目配置
+name = "yinshi"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+# ── 启用 D1 持久化（推荐，否则数据仅存于实例内存）──────────────
+# 1) 创建数据库：npx wrangler d1 create yinshi-db
+# 2) 把返回的 database_id 填到下面
+# 3) 初始化表结构：npx wrangler d1 execute yinshi-db --remote --file=./schema.sql
+# 4) 取消下面四行注释后重新部署
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "yinshi-db"
+# database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

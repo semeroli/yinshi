@@ -5,10 +5,18 @@
   "type": "module",
   "description": "诗境 · 意境成诗 —— 三段式古诗生成应用（本地服务版）",
   "scripts": {
+    "build": "node scripts/build.mjs",
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "preview": "npm run build && wrangler pages dev dist",
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "db:create": "wrangler d1 create yinshi-db",
+    "db:init": "wrangler d1 execute yinshi-db --remote --file=./schema.sql"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "wrangler": "^4.159.0"
   }
 }
