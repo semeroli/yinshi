@@ -61,18 +61,22 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens })
   return content;
 }
 
+/** 商汤日日新：优先用单 Key，其次 AK/SK 换 JWT */
 async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) {
-  const ak = env.SENSENOVA_AK;
-  const sk = env.SENSENOVA_SK;
-  if (!ak || !sk) throw new Error('NO_SENSENOVA_KEY');
+  let token = env.SENSENOVA_API_KEY || '';
+  if (!token) {
+    const ak = env.SENSENOVA_AK;
+    const sk = env.SENSENOVA_SK;
+    if (!ak || !sk) throw new Error('NO_SENSENOVA_KEY');
 
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 }));
-  const key = await crypto.subtle.importKey('raw', enc.encode(sk), { name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-  ]);
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
-  const token = `${header}.${payload}.${b64url(sig)}`;
+    const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const payload = b64url(JSON.stringify({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 }));
+    const key = await crypto.subtle.importKey('raw', enc.encode(sk), { name: 'HMAC', hash: 'SHA-256' }, false, [
+      'sign',
+    ]);
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
+    token = `${header}.${payload}.${b64url(sig)}`;
+  }
 
   const data = await postJson(
     'https://api.sensenova.cn/v1/llm/chat-completions',
@@ -91,6 +95,10 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
 }
 
 /** 统一入口，返回 { content, channel } */
+export function hasSenseNova(env) {
+  return Boolean(env.SENSENOVA_API_KEY) || Boolean(env.SENSENOVA_AK && env.SENSENOVA_SK);
+}
+
 export async function chat(env, messages, params) {
   const errors = [];
   if (env.MODELSCOPE_API_KEY) {
@@ -100,7 +108,7 @@ export async function chat(env, messages, params) {
       errors.push(`modelscope: ${err.message}`);
     }
   }
-  if (env.SENSENOVA_AK && env.SENSENOVA_SK) {
+  if (hasSenseNova(env)) {
     try {
       return { content: await callSenseNova(env, messages, params), channel: 'sensenova' };
     } catch (err) {

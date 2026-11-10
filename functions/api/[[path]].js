@@ -42,7 +42,7 @@ async function readJson(request) {
 }
 
 function isDemo(env) {
-  return !env.MODELSCOPE_API_KEY && !(env.SENSENOVA_AK && env.SENSENOVA_SK);
+  return !env.MODELSCOPE_API_KEY && !env.SENSENOVA_API_KEY && !(env.SENSENOVA_AK && env.SENSENOVA_SK);
 }
 
 function secretOf(env) {

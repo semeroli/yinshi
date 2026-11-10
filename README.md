@@ -60,7 +60,8 @@ PORT=5180 ADMIN_USERNAME=admin node server/index.js
 | 变量 | 作用 |
 | --- | --- |
 | `MODELSCOPE_API_KEY` | 魔搭 ModelScope 主通道（OpenAI 兼容） |
-| `SENSENOVA_AK` / `SENSENOVA_SK` | 商汤日日新备用通道（HMAC-SHA256 签 JWT） |
+| `SENSENOVA_API_KEY` | 商汤日日新备用通道（单 Key，直接作为 Bearer） |
+| `SENSENOVA_AK` / `SENSENOVA_SK` | 商汤日日新备用通道（AK/SK 换 JWT，与单 Key 二选一） |
 | `JWT_SECRET` | 会话签名密钥，生产必须替换 |
 | `ADMIN_USERNAME` | 管理员用户名 |
 | `PBKDF2_ITERATIONS` | 密码迭代次数，免费实例可降到 20000 |
@@ -152,7 +153,7 @@ npx wrangler d1 execute yinshi-db --remote --file=./schema.sql
 | `ADMIN_USERNAME` | 该用户名注册即自动成为管理员 |
 | `JWT_SECRET` | 会话签名密钥，务必替换为随机串 |
 | `MODELSCOPE_API_KEY` | 可选，配置后切换为真实模型通道 |
-| `SENSENOVA_AK` / `SENSENOVA_SK` | 可选，备用通道 |
+| `SENSENOVA_API_KEY` 或 `SENSENOVA_AK`+`SENSENOVA_SK` | 可选，备用通道（二选一） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET` | 可选，人机验证 |
 
 ### 4. 本地验证 Pages 运行时

@@ -72,7 +72,7 @@ export async function chat(messages, params, model) {
     }
   }
 
-  if (process.env.SENSENOVA_AK && process.env.SENSENOVA_SK) {
+  if (hasSenseNova()) {
     try {
       const content = await callSenseNova(messages, params);
       return { content, channel: 'sensenova' };
@@ -86,17 +86,30 @@ export async function chat(messages, params, model) {
   throw err;
 }
 
-/** 商汤日日新：AK/SK 使用 HMAC-SHA256 生成 JWT（具体以商汤最新文档为准） */
+/** 是否配置了商汤通道：单 Key 或 AK/SK 任一即可 */
+export function hasSenseNova() {
+  return Boolean(process.env.SENSENOVA_API_KEY) ||
+    Boolean(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK);
+}
+
+/**
+ * 商汤日日新：两种鉴权都支持
+ * 1) SENSENOVA_API_KEY：控制台直接签发的 API Key，作为 Bearer Token
+ * 2) SENSENOVA_AK + SENSENOVA_SK：AK 标识身份，SK 做 HMAC-SHA256 换 JWT
+ */
 async function callSenseNova(messages, { temperature, top_p, max_tokens }) {
-  const { createHmac } = await import('node:crypto');
-  const ak = process.env.SENSENOVA_AK;
-  const sk = process.env.SENSENOVA_SK;
-  const b64 = (obj) =>
-    Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj)).toString('base64url');
-  const header = b64({ alg: 'HS256', typ: 'JWT' });
-  const payload = b64({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 });
-  const signature = createHmac('sha256', sk).update(`${header}.${payload}`).digest('base64url');
-  const token = `${header}.${payload}.${signature}`;
+  let token = process.env.SENSENOVA_API_KEY || '';
+  if (!token) {
+    const { createHmac } = await import('node:crypto');
+    const ak = process.env.SENSENOVA_AK;
+    const sk = process.env.SENSENOVA_SK;
+    const b64 = (obj) =>
+      Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj)).toString('base64url');
+    const header = b64({ alg: 'HS256', typ: 'JWT' });
+    const payload = b64({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 });
+    const signature = createHmac('sha256', sk).update(`${header}.${payload}`).digest('base64url');
+    token = `${header}.${payload}.${signature}`;
+  }
 
   const data = await postJson(
     'https://api.sensenova.cn/v1/llm/chat-completions',

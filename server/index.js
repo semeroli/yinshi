@@ -50,7 +50,10 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT || 0);
-const DEMO_MODE = !process.env.MODELSCOPE_API_KEY && !(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK);
+const DEMO_MODE =
+  !process.env.MODELSCOPE_API_KEY &&
+  !process.env.SENSENOVA_API_KEY &&
+  !(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
