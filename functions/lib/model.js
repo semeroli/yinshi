@@ -78,6 +78,7 @@ const DEFAULT_MODELS = [
 ];
 
 let workingModel = '';
+let modelScopeDownUntil = 0;
 
 function modelCandidates(env) {
   const configured = String(env.MODELSCOPE_MODEL || '')
@@ -89,6 +90,7 @@ function modelCandidates(env) {
 
 async function callModelScope(env, messages, { temperature, top_p, max_tokens }) {
   if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
+  if (Date.now() < modelScopeDownUntil) throw new Error('魔搭通道熔断中，稍后重试');
 
   const candidates = workingModel ? [workingModel] : modelCandidates(env);
   const errors = [];
@@ -116,6 +118,8 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens })
       if (workingModel) workingModel = '';
     }
   }
+  // 全部候选失败：10 分钟内直接跳过该通道，避免拖慢请求
+  modelScopeDownUntil = Date.now() + 10 * 60 * 1000;
   throw new Error(errors.join(' | ').slice(0, 400));
 }
 

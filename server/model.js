@@ -72,6 +72,7 @@ const DEFAULT_MODELS = [
 ];
 
 let workingModel = '';
+let modelScopeDownUntil = 0;
 
 function modelCandidates() {
   const configured = String(process.env.MODELSCOPE_MODEL || '')
@@ -84,6 +85,7 @@ function modelCandidates() {
 async function callModelScope(messages, { temperature, top_p, max_tokens }, model) {
   const key = process.env.MODELSCOPE_API_KEY;
   if (!key) throw new Error('NO_MODELSCOPE_KEY');
+  if (Date.now() < modelScopeDownUntil) throw new Error('魔搭通道熔断中，稍后重试');
 
   const candidates = model ? [model] : workingModel ? [workingModel] : modelCandidates();
   const errors = [];
@@ -111,6 +113,7 @@ async function callModelScope(messages, { temperature, top_p, max_tokens }, mode
       if (workingModel) workingModel = '';
     }
   }
+  modelScopeDownUntil = Date.now() + 10 * 60 * 1000;
   throw new Error(errors.join(' | ').slice(0, 400));
 }
 
