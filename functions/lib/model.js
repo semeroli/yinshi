@@ -152,17 +152,21 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
       top_p,
       max_tokens,
     };
-    let data;
+    const url = `${base}/chat/completions`;
+    const headers = { Authorization: `Bearer ${apiKey}` };
+
+    // response_format 在部分模型上会返回空内容，空则退回纯文本再试一次
+    let content = '';
     try {
-      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, {
-        ...payload,
-        response_format: { type: 'json_object' },
-      });
-    } catch (err) {
-      // 部分模型不支持 response_format，退化为纯文本
-      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, payload);
+      const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } });
+      content = data?.choices?.[0]?.message?.content || '';
+    } catch {
+      content = '';
     }
-    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      const data = await postJson(url, headers, payload);
+      content = data?.choices?.[0]?.message?.content || '';
+    }
     if (!content) throw new Error('商汤返回为空');
     return content;
   }
