@@ -129,20 +129,48 @@ export function hasSenseNova() {
   );
 }
 
-/** 商汤日日新：优先单 Key（Bearer），否则 AK/SK 换 JWT */
+/**
+ * 商汤日日新，两代接口都支持：
+ * 1) SENSENOVA_API_KEY（新版，sk- 开头，OpenAI 兼容）
+ * 2) SENSENOVA_AK + SENSENOVA_SK（旧版商汤大装置，JWT 鉴权）
+ */
 async function callSenseNova(messages, { temperature, top_p, max_tokens }) {
-  let token = process.env.SENSENOVA_API_KEY || '';
-  if (!token) {
-    const { createHmac } = await import('node:crypto');
-    const ak = process.env.SENSENOVA_AK;
-    const sk = process.env.SENSENOVA_SK;
-    const b64 = (obj) =>
-      Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj)).toString('base64url');
-    const header = b64({ alg: 'HS256', typ: 'JWT' });
-    const payload = b64({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 });
-    const signature = createHmac('sha256', sk).update(`${header}.${payload}`).digest('base64url');
-    token = `${header}.${payload}.${signature}`;
+  const apiKey = process.env.SENSENOVA_API_KEY;
+
+  if (apiKey) {
+    const base = String(process.env.SENSENOVA_BASE_URL || 'https://token.sensenova.cn/v1').replace(/\/+$/, '');
+    const payload = {
+      model: process.env.SENSENOVA_MODEL || 'sensenova-6.8-flash-lite',
+      messages,
+      temperature,
+      top_p,
+      max_tokens,
+    };
+    let data;
+    try {
+      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, {
+        ...payload,
+        response_format: { type: 'json_object' },
+      });
+    } catch (err) {
+      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, payload);
+    }
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('商汤返回为空');
+    return content;
   }
+
+  const { createHmac } = await import('node:crypto');
+  const ak = process.env.SENSENOVA_AK;
+  const sk = process.env.SENSENOVA_SK;
+  if (!ak || !sk) throw new Error('NO_SENSENOVA_KEY');
+
+  const b64 = (obj) =>
+    Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj)).toString('base64url');
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const payload = b64({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 });
+  const signature = createHmac('sha256', sk).update(`${header}.${payload}`).digest('base64url');
+  const token = `${header}.${payload}.${signature}`;
 
   const data = await postJson(
     'https://api.sensenova.cn/v1/llm/chat-completions',

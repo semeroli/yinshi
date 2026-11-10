@@ -126,31 +126,64 @@ export function hasOnlineModel(env) {
   return Boolean(env.LLM_BASE_URL && env.LLM_API_KEY) || Boolean(env.MODELSCOPE_API_KEY) || hasSenseNova(env);
 }
 
-/** 商汤日日新：优先单 Key（Bearer），否则 AK/SK 换 JWT */
+/**
+ * 商汤日日新，两代接口都支持：
+ * 1) SENSENOVA_API_KEY（新版 platform.sensenova.cn，sk- 开头，OpenAI 兼容）
+ *    → https://token.sensenova.cn/v1/chat/completions
+ * 2) SENSENOVA_AK + SENSENOVA_SK（旧版商汤大装置 console.sensecore.cn）
+ *    → https://api.sensenova.cn/v1/llm/chat-completions（JWT 鉴权）
+ */
 async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) {
-  let token = env.SENSENOVA_API_KEY || '';
-  if (!token) {
-    const ak = env.SENSENOVA_AK;
-    const sk = env.SENSENOVA_SK;
-    if (!ak || !sk) throw new Error('NO_SENSENOVA_KEY');
+  const apiKey = env.SENSENOVA_API_KEY;
 
-    const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-    const payload = b64url(JSON.stringify({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 }));
-    const key = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(sk),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
-    token = `${header}.${payload}.${b64url(sig)}`;
+  // 新版：单 Key
+  if (apiKey) {
+    const base = String(env.SENSENOVA_BASE_URL || 'https://token.sensenova.cn/v1').replace(/\/+$/, '');
+    const payload = {
+      model: env.SENSENOVA_MODEL || 'sensenova-6.8-flash-lite',
+      messages,
+      temperature,
+      top_p,
+      max_tokens,
+    };
+    let data;
+    try {
+      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, {
+        ...payload,
+        response_format: { type: 'json_object' },
+      });
+    } catch (err) {
+      // 部分模型不支持 response_format，退化为纯文本
+      data = await postJson(`${base}/chat/completions`, { Authorization: `Bearer ${apiKey}` }, payload);
+    }
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('商汤返回为空');
+    return content;
   }
+
+  // 旧版：AK/SK 换 JWT
+  const ak = env.SENSENOVA_AK;
+  const sk = env.SENSENOVA_SK;
+  if (!ak || !sk) throw new Error('NO_SENSENOVA_KEY');
+
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = b64url(JSON.stringify({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 }));
+  const key = await crypto.subtle.importKey('raw', enc.encode(sk), { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
+  const token = `${header}.${payload}.${b64url(sig)}`;
 
   const data = await postJson(
     'https://api.sensenova.cn/v1/llm/chat-completions',
     { Authorization: `Bearer ${token}` },
-    { model: env.SENSENOVA_MODEL || 'SenseChat-5', messages, temperature, top_p, max_tokens },
+    {
+      model: env.SENSENOVA_MODEL || 'SenseChat-5',
+      messages,
+      temperature,
+      top_p,
+      max_tokens,
+    },
   );
   const content = data?.data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('商汤返回为空');
