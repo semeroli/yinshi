@@ -36,67 +36,66 @@ async function postJson(url, headers, body) {
   }
 }
 
-/** 魔搭 ModelScope（OpenAI 兼容） */
+/** 魔搭服务端模型会上下架：MODELSCOPE_MODEL 可填多个候选，未命中时按链重试 */
+const DEFAULT_MODELS = [
+  'Qwen/Qwen3-8B',
+  'Qwen/Qwen3-32B',
+  'Qwen/Qwen2.5-7B-Instruct',
+  'deepseek-ai/DeepSeek-V3.1',
+];
+
+let workingModel = '';
+
+function modelCandidates() {
+  const configured = String(process.env.MODELSCOPE_MODEL || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return [...new Set([...configured, ...DEFAULT_MODELS])];
+}
+
 async function callModelScope(messages, { temperature, top_p, max_tokens }, model) {
   const key = process.env.MODELSCOPE_API_KEY;
   if (!key) throw new Error('NO_MODELSCOPE_KEY');
-  const data = await postJson(
-    'https://api-inference.modelscope.cn/v1/chat/completions',
-    { Authorization: `Bearer ${key}` },
-    {
-      model: model || process.env.MODELSCOPE_MODEL || 'Qwen/Qwen2.5-72B-Instruct',
-      messages,
-      temperature,
-      top_p,
-      max_tokens,
-      response_format: { type: 'json_object' },
-    },
-  );
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('模型返回为空');
-  return content;
-}
 
-/**
- * 统一调用入口，返回 { content, channel }
- * 依次尝试：魔搭 → 商汤 → 抛出（由上层降级为演示库）
- */
-export async function chat(messages, params, model) {
+  const candidates = model ? [model] : workingModel ? [workingModel] : modelCandidates();
   const errors = [];
 
-  if (process.env.MODELSCOPE_API_KEY) {
+  for (const name of candidates) {
     try {
-      return { content: await callModelScope(messages, params, model), channel: 'modelscope' };
+      const data = await postJson(
+        'https://api-inference.modelscope.cn/v1/chat/completions',
+        { Authorization: `Bearer ${key}` },
+        {
+          model: name,
+          messages,
+          temperature,
+          top_p,
+          max_tokens,
+          response_format: { type: 'json_object' },
+        },
+      );
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error('模型返回为空');
+      workingModel = name;
+      return content;
     } catch (err) {
-      errors.push(`modelscope: ${err.message}`);
+      errors.push(`${name}: ${err.message}`);
+      if (workingModel) workingModel = '';
     }
   }
-
-  if (hasSenseNova()) {
-    try {
-      const content = await callSenseNova(messages, params);
-      return { content, channel: 'sensenova' };
-    } catch (err) {
-      errors.push(`sensenova: ${err.message}`);
-    }
-  }
-
-  const err = new Error(errors.length ? errors.join(' | ') : '未配置模型 Key');
-  err.fallback = true;
-  throw err;
+  throw new Error(errors.join(' | ').slice(0, 400));
 }
 
 /** 是否配置了商汤通道：单 Key 或 AK/SK 任一即可 */
 export function hasSenseNova() {
-  return Boolean(process.env.SENSENOVA_API_KEY) ||
-    Boolean(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK);
+  return (
+    Boolean(process.env.SENSENOVA_API_KEY) ||
+    Boolean(process.env.SENSENOVA_AK && process.env.SENSENOVA_SK)
+  );
 }
 
-/**
- * 商汤日日新：两种鉴权都支持
- * 1) SENSENOVA_API_KEY：控制台直接签发的 API Key，作为 Bearer Token
- * 2) SENSENOVA_AK + SENSENOVA_SK：AK 标识身份，SK 做 HMAC-SHA256 换 JWT
- */
+/** 商汤日日新：优先单 Key（Bearer），否则 AK/SK 换 JWT */
 async function callSenseNova(messages, { temperature, top_p, max_tokens }) {
   let token = process.env.SENSENOVA_API_KEY || '';
   if (!token) {
@@ -125,4 +124,30 @@ async function callSenseNova(messages, { temperature, top_p, max_tokens }) {
   const content = data?.data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('商汤返回为空');
   return content;
+}
+
+/** 统一入口，返回 { content, channel } */
+export async function chat(messages, params, model) {
+  const errors = [];
+
+  if (process.env.MODELSCOPE_API_KEY) {
+    try {
+      return { content: await callModelScope(messages, params, model), channel: 'modelscope' };
+    } catch (err) {
+      errors.push(`modelscope: ${err.message}`);
+    }
+  }
+
+  if (hasSenseNova()) {
+    try {
+      const content = await callSenseNova(messages, params);
+      return { content, channel: 'sensenova' };
+    } catch (err) {
+      errors.push(`sensenova: ${err.message}`);
+    }
+  }
+
+  const err = new Error(errors.length ? errors.join(' | ') : '未配置模型 Key');
+  err.fallback = true;
+  throw err;
 }

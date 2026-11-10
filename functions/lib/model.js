@@ -42,26 +42,61 @@ async function postJson(url, headers, body) {
   }
 }
 
-async function callModelScope(env, messages, { temperature, top_p, max_tokens }) {
-  if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
-  const data = await postJson(
-    'https://api-inference.modelscope.cn/v1/chat/completions',
-    { Authorization: `Bearer ${env.MODELSCOPE_API_KEY}` },
-    {
-      model: env.MODELSCOPE_MODEL || 'Qwen/Qwen2.5-72B-Instruct',
-      messages,
-      temperature,
-      top_p,
-      max_tokens,
-      response_format: { type: 'json_object' },
-    },
-  );
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('模型返回为空');
-  return content;
+/** 魔搭服务端模型会上下架：MODELSCOPE_MODEL 可填多个候选，未命中时按链重试 */
+const DEFAULT_MODELS = [
+  'Qwen/Qwen3-8B',
+  'Qwen/Qwen3-32B',
+  'Qwen/Qwen2.5-7B-Instruct',
+  'deepseek-ai/DeepSeek-V3.1',
+];
+
+let workingModel = '';
+
+function modelCandidates(env) {
+  const configured = String(env.MODELSCOPE_MODEL || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return [...new Set([...configured, ...DEFAULT_MODELS])];
 }
 
-/** 商汤日日新：优先用单 Key，其次 AK/SK 换 JWT */
+async function callModelScope(env, messages, { temperature, top_p, max_tokens }) {
+  if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
+
+  const candidates = workingModel ? [workingModel] : modelCandidates(env);
+  const errors = [];
+
+  for (const name of candidates) {
+    try {
+      const data = await postJson(
+        'https://api-inference.modelscope.cn/v1/chat/completions',
+        { Authorization: `Bearer ${env.MODELSCOPE_API_KEY}` },
+        {
+          model: name,
+          messages,
+          temperature,
+          top_p,
+          max_tokens,
+          response_format: { type: 'json_object' },
+        },
+      );
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error('模型返回为空');
+      workingModel = name;
+      return content;
+    } catch (err) {
+      errors.push(`${name}: ${err.message}`);
+      if (workingModel) workingModel = '';
+    }
+  }
+  throw new Error(errors.join(' | ').slice(0, 400));
+}
+
+export function hasSenseNova(env) {
+  return Boolean(env.SENSENOVA_API_KEY) || Boolean(env.SENSENOVA_AK && env.SENSENOVA_SK);
+}
+
+/** 商汤日日新：优先单 Key（Bearer），否则 AK/SK 换 JWT */
 async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) {
   let token = env.SENSENOVA_API_KEY || '';
   if (!token) {
@@ -71,9 +106,13 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
 
     const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
     const payload = b64url(JSON.stringify({ iss: ak, exp: Math.floor(Date.now() / 1000) + 300 }));
-    const key = await crypto.subtle.importKey('raw', enc.encode(sk), { name: 'HMAC', hash: 'SHA-256' }, false, [
-      'sign',
-    ]);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(sk),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
     const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${header}.${payload}`));
     token = `${header}.${payload}.${b64url(sig)}`;
   }
@@ -81,13 +120,7 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
   const data = await postJson(
     'https://api.sensenova.cn/v1/llm/chat-completions',
     { Authorization: `Bearer ${token}` },
-    {
-      model: env.SENSENOVA_MODEL || 'SenseChat-5',
-      messages,
-      temperature,
-      top_p,
-      max_tokens,
-    },
+    { model: env.SENSENOVA_MODEL || 'SenseChat-5', messages, temperature, top_p, max_tokens },
   );
   const content = data?.data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('商汤返回为空');
@@ -95,10 +128,6 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
 }
 
 /** 统一入口，返回 { content, channel } */
-export function hasSenseNova(env) {
-  return Boolean(env.SENSENOVA_API_KEY) || Boolean(env.SENSENOVA_AK && env.SENSENOVA_SK);
-}
-
 export async function chat(env, messages, params) {
   const errors = [];
   if (env.MODELSCOPE_API_KEY) {
