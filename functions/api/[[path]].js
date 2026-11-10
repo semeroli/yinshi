@@ -96,6 +96,7 @@ async function runImagery(env, { description, form, style }) {
 
   let imagery = null;
   let channel = 'demo';
+  let fallbackReason = '';
   if (!isDemo(env)) {
     try {
       const { content, channel: ch } = await chat(
@@ -112,12 +113,14 @@ async function runImagery(env, { description, form, style }) {
         channel = ch;
       }
     } catch (err) {
+      fallbackReason = err.message;
       console.warn('[imagery] 模型通道失败，降级演示库：', err.message);
     }
   }
   if (!imagery) imagery = parseImagery(description, form, style);
 
   const result = { imagery, channel, cached: false };
+  if (fallbackReason) result.fallback_reason = fallbackReason;
   cacheSet(key, { imagery, channel });
   return result;
 }
@@ -133,6 +136,7 @@ async function runPoem(env, { imagery, form, style, strict, avoid }) {
 
   let poem = null;
   let channel = 'demo';
+  let fallbackReason = '';
   if (!isDemo(env)) {
     try {
       const { content, channel: ch } = await chat(
@@ -149,6 +153,7 @@ async function runPoem(env, { imagery, form, style, strict, avoid }) {
       poem = parseJson(content);
       channel = ch;
     } catch (err) {
+      fallbackReason = err.message;
       console.warn('[poem] 模型通道失败，降级演示库：', err.message);
       poem = null;
     }
@@ -189,6 +194,7 @@ async function runPoem(env, { imagery, form, style, strict, avoid }) {
     validation: { ok: check.ok, issues: check.issues, repaired },
     cached: false,
   };
+  if (fallbackReason) result.fallback_reason = fallbackReason;
   if (check.ok && (!avoid || !avoid.length)) cacheSet(key, result);
   return result;
 }

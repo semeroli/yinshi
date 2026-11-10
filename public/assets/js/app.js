@@ -255,6 +255,11 @@ function renderPoem(data) {
   const demoTag = data.channel === 'demo' ? '演示' : data.channel;
   const cacheTag = data.cached ? ' · 缓存命中' : '';
   ui.resultMeta.textContent = `${demoTag}${cacheTag}`;
+  if (data.fallback_reason) {
+    ui.resultMeta.textContent += ' · 模型失败';
+    ui.resultMeta.title = data.fallback_reason;
+    console.warn('[fallback]', data.fallback_reason);
+  }
 
   const ok = data.validation?.ok;
   ui.validation.textContent = ok
