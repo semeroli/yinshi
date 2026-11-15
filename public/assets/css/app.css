@@ -816,3 +816,251 @@
     font-size: 13px;
   }
 }
+
+/* ============================================================
+   意境稿阶段（先定立意，再成诗）
+   ============================================================ */
+
+.theme-stage {
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fade-up 0.5s var(--ease);
+}
+
+.stage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stage-title {
+  font-size: clamp(18px, 2.2vw, 21px);
+  letter-spacing: 0.22em;
+}
+
+.stage-src {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.stage-src[data-channel='local'] {
+  color: var(--bamboo);
+  border-color: rgba(92, 115, 96, 0.35);
+  background: var(--bamboo-soft);
+}
+
+.stage-tip {
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--ink-3);
+}
+
+.theme-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 14px 15px;
+  font-family: var(--font-poem);
+  font-size: 16px;
+  line-height: 2;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  background: linear-gradient(165deg, #fffdf7 0%, #faf6ea 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  resize: vertical;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.theme-textarea:focus {
+  outline: none;
+  border-color: rgba(195, 39, 43, 0.5);
+  box-shadow: 0 0 0 3px var(--cinnabar-soft);
+}
+
+.theme-chips-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.theme-chips-row .block-label {
+  margin-bottom: 0;
+}
+
+.block-hint {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+}
+
+.theme-chips .chip {
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--dur) var(--ease);
+}
+
+.theme-chips .chip:hover {
+  border-color: rgba(195, 39, 43, 0.65);
+}
+
+/* 剔除的意象：变灰划线，仍可点回来 */
+.theme-chips .chip.off {
+  color: var(--ink-3);
+  border-color: var(--line);
+  background: transparent;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.7;
+}
+
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.stage-actions .btn-primary {
+  flex: 1 1 170px;
+  min-height: 46px;
+}
+
+.btn-text {
+  background: none;
+  border: 0;
+  padding: 6px 2px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+  transition: color var(--dur) var(--ease), text-decoration-color var(--dur) var(--ease);
+}
+
+.btn-text:hover {
+  color: var(--cinnabar);
+  text-decoration-color: var(--cinnabar);
+}
+
+/* ============================================================
+   结果页：立意回显
+   ============================================================ */
+
+.theme-recall {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.42);
+  padding: 11px 14px;
+}
+
+.theme-recall summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.theme-recall summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-recall summary .block-label {
+  margin-bottom: 0;
+}
+
+.recall-hint {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.theme-recall[open] summary {
+  margin-bottom: 10px;
+}
+
+.theme-recall p {
+  font-family: var(--font-poem);
+  font-size: 14.5px;
+  line-height: 2;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+/* ============================================================
+   兜底轨迹：哪一句被改过、为什么
+   ============================================================ */
+
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.pipeline li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--ink-3);
+}
+
+.pipeline li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.66em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+
+.pipeline li[data-step='patch'] {
+  color: var(--bamboo);
+}
+
+.pipeline li[data-step='patch']::before {
+  background: var(--bamboo);
+}
+
+.pipeline li[data-step='fallback'] {
+  color: var(--cinnabar);
+}
+
+.pipeline li[data-step='fallback']::before {
+  background: var(--cinnabar);
+}
+
+@media (max-width: 640px) {
+  .theme-textarea {
+    min-height: 132px;
+    font-size: 15.5px;
+  }
+  .stage-actions .btn-primary {
+    flex: 1 1 100%;
+  }
+  .stage-actions .btn-ghost,
+  .stage-actions .btn-text {
+    flex: 1 1 auto;
+  }
+}
+
+/* 没报错时别占着 20px 的高度，窄屏上那点空白很显眼 */
+#theme-error:empty {
+  display: none;
+}

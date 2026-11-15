@@ -1,8 +1,9 @@
 /**
  * 「诗境」本地服务
  * 静态托管 public/ + API：
- *   POST /api/imagery        ① 意象解析
- *   POST /api/poem           ② 格律成诗 + ③ 程序校验 / 自动修复
+ *   POST /api/theme          ① 意境润色（可编辑的意境稿）
+ *   POST /api/imagery        ① 意象解析（旧接口，保留）
+ *   POST /api/poem           ② 格律成诗 + ③ 程序校验 / 逐句修复 / 补句
  *   POST /api/auth/register  注册（PBKDF2）
  *   POST /api/auth/login     登录
  *   POST /api/auth/logout    退出
@@ -14,18 +15,29 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseImagery, composePoem, validatePoem } from './poems.js';
+import {
+  parseImagery,
+  composePoem,
+  validatePoem,
+  localTheme,
+  patchedLines,
+  syncRhymeWords,
+} from './poems.js';
 import {
   IMAGERY_SYSTEM,
+  THEME_SYSTEM,
   POEM_SYSTEM,
   FIX_SYSTEM,
   imageryUser,
+  themeUser,
   poemUser,
   fixUser,
   parseJson,
+  parseTheme,
   chat,
   chatJson,
   hasOnlineModel,
+  STEP_TIMEOUT,
 } from './model.js';
 import {
   createUser,
@@ -154,34 +166,84 @@ async function runImagery({ description, form, style }) {
   return result;
 }
 
-async function repairPoem(poem, form, issues) {
+/** ① 意境润色：把用户那三五句话扩写成可照着作诗的底本 */
+async function runTheme({ description, form, style }) {
+  const key = cacheKey({ t: 'theme', description, form, style });
+  const cached = cacheGet(key);
+  if (cached) return { ...cached, cached: true };
+
+  let theme = null;
+  let channel = 'local';
+  let fallbackReason = '';
+
+  if (!DEMO_MODE) {
+    try {
+      const { content, channel: ch } = await chat(
+        [
+          { role: 'system', content: THEME_SYSTEM },
+          { role: 'user', content: themeUser(description, form, style) },
+        ],
+        { temperature: 0.7, top_p: 0.9, max_tokens: 700, timeoutMs: STEP_TIMEOUT.theme },
+      );
+      theme = parseTheme(content);
+      channel = ch;
+    } catch (err) {
+      fallbackReason = err.message;
+      console.warn('[theme] 润色失败，改用本地模板：', err.message);
+    }
+  }
+
+  if (!theme) {
+    theme = localTheme(description, form, style);
+    channel = 'local';
+  }
+
+  const result = { theme, channel, cached: false };
+  if (fallbackReason) result.fallback_reason = fallbackReason;
+  // 降级稿不缓存：否则用户"重新润色"也只会拿回同一段模板
+  if (channel !== 'local') cacheSet(key, { theme, channel });
+  return result;
+}
+
+/** ② 逐句诊断重写：只把坏句喂回去，好句一律强制还原 */
+async function repairLines(poem, form, issues, bad, round) {
   if (DEMO_MODE) return null;
   try {
     const { content } = await chat(
       [
         { role: 'system', content: FIX_SYSTEM },
-        { role: 'user', content: fixUser(poem.lines, form, issues) },
+        { role: 'user', content: fixUser(poem.lines, form, issues, bad) },
       ],
-      { temperature: 0.2, top_p: 0.7, max_tokens: 300 },
+      {
+        temperature: round === 1 ? 0.25 : 0.15,
+        top_p: 0.7,
+        max_tokens: 400,
+        timeoutMs: STEP_TIMEOUT.fix,
+      },
     );
     const fixed = parseJson(content);
-    return Array.isArray(fixed.lines) && fixed.lines.length === 4 ? fixed : null;
+    if (!Array.isArray(fixed.lines) || fixed.lines.length !== 4) return null;
+    // 🔴 模型很爱顺手"润色"没让它动的地方 ⇒ 非坏句一律取原句
+    return poem.lines.map((line, i) => (bad.includes(i) ? String(fixed.lines[i] || line) : line));
   } catch (err) {
-    console.warn('[fix] 修复失败：', err.message);
+    console.warn(`[fix] 第 ${round} 轮修复失败：`, err.message);
     return null;
   }
 }
 
-async function runPoem({ imagery, form, style, strict, avoid }) {
+async function runPoem({ imagery, theme, form, style, strict, avoid }) {
   const finalForm = form === '自动' || !form ? imagery.form_suggestion : form;
   const finalStyle = style === '自动' || !style ? imagery.style_suggestion : style;
-  const key = cacheKey({ t: 'poem', imagery, finalForm, finalStyle, strict, avoid });
+  const themeText = String(theme || '').slice(0, 400);
+  const needLen = finalForm === '七言绝句' ? 7 : 5;
+  const key = cacheKey({ t: 'poem', imagery, themeText, finalForm, finalStyle, strict, avoid });
 
   if (!avoid || !avoid.length) {
     const cached = cacheGet(key);
     if (cached) return { ...cached, cached: true };
   }
 
+  const steps = [];
   let poem = null;
   let channel = 'demo';
   let fallbackReason = '';
@@ -197,33 +259,72 @@ async function runPoem({ imagery, form, style, strict, avoid }) {
               style: finalStyle,
               strict,
               avoid,
+              theme: themeText,
             }),
           },
         ],
-        { temperature: 0.85, top_p: 0.9, max_tokens: 400 },
+        { temperature: 0.85, top_p: 0.9, max_tokens: 500, timeoutMs: STEP_TIMEOUT.poem },
       );
       poem = parsed;
       channel = ch;
     } catch (err) {
       fallbackReason = err.message;
-      console.warn('[poem] 模型通道失败，降级演示库：', err.message);
-      poem = null;
+      console.warn('[poem] 模型通道失败：', err.message);
     }
   }
-  if (!poem || !Array.isArray(poem.lines)) {
+  if (!poem || !Array.isArray(poem.lines) || poem.lines.length !== 4) {
     poem = composePoem(imagery, { form: finalForm, style: finalStyle, strict, avoid });
     channel = 'demo';
+    steps.push({ step: 'local', note: '模型没有给出四句诗，改用本地诗库' });
+  } else if (syncRhymeWords(poem)) {
+    steps.push({ step: 'rhyme-decl', note: '模型声明的韵脚写错了，已按实际句尾修正（诗未改动）' });
   }
 
-  // ③ 程序校验 + 最多一次修复
   let check = validatePoem(poem, finalForm);
-  let repaired = false;
+
+  // ② 逐句诊断重写：最多两轮
+  for (let round = 1; round <= 2 && !check.ok && channel !== 'demo'; round += 1) {
+    const badNow = check.bad.slice();
+    const before = check.issues.length;
+    const merged = await repairLines(poem, finalForm, check.issues, badNow, round);
+    if (!merged) break;
+
+    const next = validatePoem({ ...poem, lines: merged }, finalForm);
+    if (next.issues.length > before) {
+      steps.push({ step: 'fix', note: `第 ${round} 轮改完反而更差，已撤回` });
+      break;
+    }
+    poem.lines = merged;
+    check = next;
+    steps.push({ step: 'fix', note: `第 ${round} 轮重写了第 ${badNow.map((i) => i + 1).join('、')} 句` });
+  }
+
+  // ③ 库存补坏句：只补不承担押韵的位置
   if (!check.ok) {
-    const fixed = await repairPoem(poem, finalForm, check.issues);
-    if (fixed) {
-      poem.lines = fixed.lines;
-      repaired = true;
+    const patched = patchedLines(poem, needLen, check.bad);
+    if (patched.patches.length) {
+      poem.lines = patched.lines;
+      patched.patches.forEach((pt) => {
+        if (pt.para && Array.isArray(poem.paraphrase)) poem.paraphrase[pt.index] = pt.para;
+      });
       check = validatePoem(poem, finalForm);
+      steps.push({
+        step: 'patch',
+        note: `第 ${patched.patches.map((p) => p.index + 1).join('、')} 句改用本地诗句补齐，其余句子保留`,
+      });
+    }
+  }
+
+  // ④ 整首回落：最后一步，才换库存
+  if (!check.ok) {
+    const local = composePoem(imagery, { form: finalForm, style: finalStyle, strict, avoid });
+    const localCheck = validatePoem(local, finalForm);
+    if (localCheck.issues.length < check.issues.length) {
+      poem = local;
+      check = localCheck;
+      channel = 'demo';
+      fallbackReason = fallbackReason || '坏句过多，整首改由本地诗库兜底';
+      steps.push({ step: 'fallback', note: '坏句过多，整首改用本地诗库' });
     }
   }
 
@@ -232,11 +333,19 @@ async function runPoem({ imagery, form, style, strict, avoid }) {
     channel,
     form: poem.form || finalForm,
     style: poem.style || finalStyle,
-    validation: { ok: check.ok, issues: check.issues, repaired },
+    validation: {
+      ok: check.ok,
+      issues: check.issues,
+      bad: check.bad,
+      repaired: steps.some((s) => s.step === 'fix' || s.step === 'patch'),
+    },
+    pipeline: steps,
+    theme: themeText,
     cached: false,
   };
   if (fallbackReason) result.fallback_reason = fallbackReason;
-  if (check.ok && (!avoid || !avoid.length)) cacheSet(key, result);
+  // 🔴 只缓存"模型写成 + 校验通过"的结果，别把降级结果钉死 24 小时
+  if (check.ok && channel !== 'demo' && (!avoid || !avoid.length)) cacheSet(key, result);
   return result;
 }
 
@@ -326,6 +435,25 @@ async function handleApi(req, res, pathname, url) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': clearSession() });
   }
 
+  if (pathname === '/api/theme' && req.method === 'POST') {
+    const user = getUserFromRequest(req);
+    if (!user) return send(res, 401, { error: '请先登录后再题诗' });
+
+    const body = await readBody(req);
+    const description = String(body.description || '').trim();
+    if (description.length < 2) return send(res, 400, { error: '请多写几个字，让诗兴有个落点' });
+    if (description.length > 120) return send(res, 400, { error: '意境描述请控制在 120 字以内' });
+    if (!rateLimit(`theme:${ip}`, 40, 60 * 60 * 1000)) {
+      return send(res, 429, { error: '今日诗兴已用尽，请稍后再来' });
+    }
+    if (process.env.TURNSTILE_SECRET && !(await verifyTurnstile(body.turnstileToken, ip))) {
+      return send(res, 403, { error: '人机验证未通过，请重试' });
+    }
+
+    const result = await runTheme({ description, form: body.form, style: body.style });
+    return send(res, 200, result);
+  }
+
   if (pathname === '/api/imagery' && req.method === 'POST') {
     const user = getUserFromRequest(req);
     if (!user) return send(res, 401, { error: '请先登录后再题诗' });
@@ -360,6 +488,7 @@ async function handleApi(req, res, pathname, url) {
 
     const result = await runPoem({
       imagery,
+      theme: body.theme,
       form: body.form || '自动',
       style: body.style || '自动',
       strict: body.strict !== false,

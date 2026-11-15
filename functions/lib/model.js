@@ -6,15 +6,20 @@ import { parseJson } from '../../shared/prompts.js';
 
 export {
   IMAGERY_SYSTEM,
+  THEME_SYSTEM,
   POEM_SYSTEM,
   FIX_SYSTEM,
   imageryUser,
+  themeUser,
   poemUser,
   fixUser,
   parseJson,
+  parseTheme,
 } from '../../shared/prompts.js';
 
-const TIMEOUT_MS = 70000;
+/** 单次调用的默认上限。成诗慢，润色/校对快，调用方可按步骤覆盖。 */
+const DEFAULT_TIMEOUT_MS = 70000;
+export const STEP_TIMEOUT = { theme: 18000, poem: 70000, fix: 18000 };
 
 /** 兼容不同厂商的返回结构（content / reasoning_content / text） */
 function pickContent(data) {
@@ -38,9 +43,9 @@ function b64url(data) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function postJson(url, headers, body) {
+async function postJson(url, headers, body, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -62,7 +67,7 @@ async function postJson(url, headers, body) {
  * 通用 OpenAI 兼容通道（DeepSeek / 智谱 / 通义 / OpenAI / 自建网关均可）
  * 只需配置 LLM_BASE_URL、LLM_API_KEY，模型名用 LLM_MODEL
  */
-async function callOpenAICompatible(env, messages, { temperature, top_p, max_tokens }) {
+async function callOpenAICompatible(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
   const base = String(env.LLM_BASE_URL || '').replace(/\/+$/, '');
   if (!base) throw new Error('NO_LLM_BASE_URL');
 
@@ -77,6 +82,7 @@ async function callOpenAICompatible(env, messages, { temperature, top_p, max_tok
       max_tokens,
       response_format: { type: 'json_object' },
     },
+    timeoutMs,
   );
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('模型返回为空');
@@ -93,6 +99,10 @@ const DEFAULT_MODELS = [
 
 let workingModel = '';
 let modelScopeDownUntil = 0;
+let lastProbeAt = 0;
+/** 熔断期内的半开探测间隔；熔断时长也别给太长，否则一次失手 = 十分钟全废 */
+const PROBE_INTERVAL_MS = 30 * 1000;
+const OUTAGE_MS = 2 * 60 * 1000;
 
 function modelCandidates(env) {
   const configured = String(env.MODELSCOPE_MODEL || '')
@@ -102,12 +112,21 @@ function modelCandidates(env) {
   return [...new Set([...configured, ...DEFAULT_MODELS])];
 }
 
-async function callModelScope(env, messages, { temperature, top_p, max_tokens }) {
+async function callModelScope(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
   if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
-  if (Date.now() < modelScopeDownUntil) throw new Error('魔搭通道熔断中，稍后重试');
+  // 熔断期不再一刀切拒绝：每 30 秒放一个请求出去探路（半开）。
+  // 否则一次偶发超时会把接下来十分钟的请求全部按死在本地库存上。
+  const nowAt = Date.now();
+  if (nowAt < modelScopeDownUntil) {
+    if (nowAt - lastProbeAt < PROBE_INTERVAL_MS) throw new Error('魔搭通道熔断中，稍后重试');
+    lastProbeAt = nowAt;
+  }
 
   const candidates = workingModel ? [workingModel] : modelCandidates(env);
   const errors = [];
+
+  // 候选模型是串行试的，每家都吃满超时会把整步拖爆 ⇒ 按剩余候选均分
+  const perTry = Math.max(6000, Math.floor((timeoutMs || DEFAULT_TIMEOUT_MS) / candidates.length));
 
   for (const name of candidates) {
     try {
@@ -122,18 +141,21 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens })
           max_tokens,
           response_format: { type: 'json_object' },
         },
+        perTry,
       );
       const content = data?.choices?.[0]?.message?.content;
       if (!content) throw new Error('模型返回为空');
       workingModel = name;
+      modelScopeDownUntil = 0;
       return content;
     } catch (err) {
       errors.push(`${name}: ${err.message}`);
       if (workingModel) workingModel = '';
     }
   }
-  // 全部候选失败：10 分钟内直接跳过该通道，避免拖慢请求
-  modelScopeDownUntil = Date.now() + 10 * 60 * 1000;
+  // 全部候选失败：短时熔断，避免每次请求都白等四个候选串行超时
+  modelScopeDownUntil = Date.now() + OUTAGE_MS;
+  lastProbeAt = Date.now();
   throw new Error(errors.join(' | ').slice(0, 400));
 }
 
@@ -153,7 +175,7 @@ export function hasOnlineModel(env) {
  * 2) SENSENOVA_AK + SENSENOVA_SK（旧版商汤大装置 console.sensecore.cn）
  *    → https://api.sensenova.cn/v1/llm/chat-completions（JWT 鉴权）
  */
-async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) {
+async function callSenseNova(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
   const apiKey = env.SENSENOVA_API_KEY;
 
   // 新版：单 Key
@@ -172,13 +194,13 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
     // response_format 在部分模型上会返回空内容，空则退回纯文本再试一次
     let content = '';
     try {
-      const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } });
+      const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs);
       content = pickContent(data);
     } catch {
       content = '';
     }
     if (!content) {
-      const data = await postJson(url, headers, payload);
+      const data = await postJson(url, headers, payload, timeoutMs);
       content = pickContent(data);
     }
     if (!content) throw new Error('商汤返回为空');
@@ -208,6 +230,7 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens }) 
       top_p,
       max_tokens,
     },
+    timeoutMs,
   );
   const content = data?.data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('商汤返回为空');

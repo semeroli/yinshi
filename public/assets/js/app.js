@@ -18,7 +18,19 @@ const ui = {
   modeBadge: el('mode-badge'),
   modeText: el('mode-text'),
   resultMeta: el('result-meta'),
+  resultTitle: el('result-title'),
   imageryChips: el('imagery-chips'),
+  themeStage: el('theme-stage'),
+  themeText: el('theme-text'),
+  themeChips: el('theme-chips'),
+  themeSource: el('theme-source'),
+  themeError: el('theme-error'),
+  btnCompose: el('btn-compose'),
+  btnRepolish: el('btn-repolish'),
+  btnSkipTheme: el('btn-skip-theme'),
+  themeRecall: el('theme-recall'),
+  themeRecallText: el('theme-recall-text'),
+  pipelineNote: el('pipeline-note'),
   poemTitle: el('poem-title'),
   poemFormTag: el('poem-form-tag'),
   poemStyleTag: el('poem-style-tag'),
@@ -44,6 +56,9 @@ const state = {
   form: '自动',
   style: '自动',
   strict: true,
+  theme: null,
+  themeText: '',
+  themeSource: 'ai',
   imagery: null,
   poem: null,
   formUsed: '五言绝句',
@@ -162,17 +177,22 @@ ui.description.addEventListener('input', () => {
 function show(view) {
   ui.empty.hidden = view !== 'empty';
   ui.loading.hidden = view !== 'loading';
+  ui.themeStage.hidden = view !== 'theme';
   ui.result.hidden = view !== 'result';
   ui.error.hidden = view !== 'error';
+  // 右上角这块面板在不同阶段装的是不同的东西，标题别一直叫「诗笺」
+  ui.resultTitle.textContent = view === 'theme' ? '立意' : '诗笺';
 }
 
-function setBusy(busy, label = '请君落笔') {
+function setBusy(busy, label = '') {
   state.busy = busy;
   ui.submit.disabled = busy;
   ui.btnAgain.disabled = busy;
+  ui.btnCompose.disabled = busy;
+  ui.btnRepolish.disabled = busy;
   ui.submit.innerHTML = busy
-    ? '<span class="spinner"></span><span>诗成中…</span>'
-    : `<span class="btn-label">${label}</span>`;
+    ? `<span class="spinner"></span><span>${label === '润色意境' ? '润色中…' : '诗成中…'}</span>`
+    : '<span class="btn-label">请君落笔</span>';
 }
 
 function progress(step) {
@@ -252,60 +272,157 @@ function renderPoem(data) {
   ui.paraphrase.hidden = true;
   ui.btnParaphrase.setAttribute('aria-expanded', 'false');
 
-  const demoTag = data.channel === 'demo' ? '演示' : data.channel;
+  const CHANNEL_LABEL = {
+    demo: '本地诗库',
+    local: '本地模板',
+    sensenova: '商汤',
+    modelscope: '魔搭',
+    llm: '在线模型',
+  };
+  const demoTag = CHANNEL_LABEL[data.channel] || data.channel || '在线模型';
   const cacheTag = data.cached ? ' · 缓存命中' : '';
   ui.resultMeta.textContent = `${demoTag}${cacheTag}`;
   if (data.fallback_reason) {
-    ui.resultMeta.textContent += ' · 模型失败';
+    ui.resultMeta.textContent += ' · 模型未用上';
     ui.resultMeta.title = data.fallback_reason;
     console.warn('[fallback]', data.fallback_reason);
   }
 
   const ok = data.validation?.ok;
+  const needLen = form === '七言绝句' ? 7 : 5;
   ui.validation.textContent = ok
-    ? `程序校验通过：每句 ${form === '七言绝句' ? 7 : 5} 字，二、四句押韵${data.validation.repaired ? '（已自动修复）' : ''}`
-    : `校验提示：${(data.validation?.issues || []).join('；')}`;
+    ? `程序校验通过：每句 ${needLen} 字，二、四句押韵${
+        data.validation.repaired ? '（中途改过坏句）' : ''
+      }`
+    : `校验提示：${(data.validation?.issues || []).join('；')}。已保留最好的一版，可点「换一首」重来。`;
+
+  // 兜底轨迹：哪一句被改过、为什么，全部摊开写出来
+  const trail = Array.isArray(data.pipeline) ? data.pipeline.filter((s) => s && s.note) : [];
+  ui.pipelineNote.innerHTML = '';
+  if (trail.length) {
+    trail.forEach((s) => {
+      const li = document.createElement('li');
+      li.dataset.step = s.step || '';
+      li.textContent = s.note;
+      ui.pipelineNote.appendChild(li);
+    });
+    ui.pipelineNote.hidden = false;
+  } else {
+    ui.pipelineNote.hidden = true;
+  }
+
+  // 立意回显：让人能对着稿子核一遍
+  const themeText = String(data.theme || '').trim();
+  if (themeText) {
+    ui.themeRecallText.textContent = themeText;
+    ui.themeRecall.hidden = false;
+  } else {
+    ui.themeRecall.hidden = true;
+  }
 }
 
-/* ---------------- 生成 ---------------- */
+/* ---------------- 生成：先定立意，再成诗 ---------------- */
 
-async function generate({ again = false } = {}) {
+/** ① 润色：把原话扩写成可编辑的意境稿 */
+async function polish() {
   const description = ui.description.value.trim();
-  if (!again && description.length < 2) {
+  if (description.length < 2) {
     ui.formError.textContent = '请先写下一段意境（至少 2 个字）';
     ui.description.focus();
     return;
   }
 
   ui.formError.textContent = '';
-  setBusy(true);
+  ui.themeError.textContent = '';
+  setBusy(true, '润色意境');
   show('loading');
   progress(1);
 
-  // 换一首时复用已有意象，避免重复解析
-  let imagery = again ? state.imagery : null;
   try {
-    if (!imagery) {
-      const res = await api('/api/imagery', {
-        method: 'POST',
-        body: {
-          description,
-          form: state.form,
-          style: state.style,
-          turnstileToken: state.turnstileToken,
-        },
-      });
-      imagery = res.imagery;
-      state.imagery = imagery;
-      renderImagery(imagery.core_imagery || []);
-      progress(2);
-    }
+    const res = await api('/api/theme', {
+      method: 'POST',
+      body: {
+        description,
+        form: state.form,
+        style: state.style,
+        turnstileToken: state.turnstileToken,
+      },
+    });
+    state.theme = res.theme;
+    state.themeSource = res.channel === 'local' ? 'local' : 'ai';
+    state.imagery = {
+      core_imagery: (res.theme.imagery || []).slice(),
+      emotion: res.theme.mood,
+      season: res.theme.season,
+      time: res.theme.time,
+      scene: res.theme.scene,
+      form_suggestion: res.theme.form_suggestion,
+      style_suggestion: res.theme.style_suggestion,
+    };
+    renderTheme(res.theme, res.channel);
+    progress(2);
+    show('theme');
+  } catch (err) {
+    ui.errorMessage.textContent = err.message || '诗兴正浓，稍候再试。';
+    show('error');
+    if (err.status === 401) setTimeout(() => location.replace('/login.html?next=/app.html'), 1200);
+  } finally {
+    setBusy(false);
+  }
+}
 
-    const avoid = again && state.poem ? [state.poem.lines.join(' / ')] : [];
+function renderTheme(theme, channel) {
+  ui.themeText.value = theme.theme || '';
+  ui.themeSource.textContent =
+    channel === 'local' ? '本地模板（模型暂不可用，可直接改）' : '由你的原话润色而来';
+  ui.themeSource.dataset.channel = channel;
+
+  ui.themeChips.innerHTML = '';
+  (theme.imagery || []).forEach((word, i) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip on';
+    chip.textContent = word;
+    chip.style.animationDelay = `${i * 60}ms`;
+    chip.setAttribute('aria-pressed', 'true');
+    chip.title = '点击剔除这个意象';
+    chip.addEventListener('click', () => {
+      const off = chip.classList.toggle('off');
+      chip.setAttribute('aria-pressed', String(!off));
+    });
+    ui.themeChips.appendChild(chip);
+  });
+}
+
+function pickedImagery() {
+  return [...ui.themeChips.querySelectorAll('.chip')]
+    .filter((c) => !c.classList.contains('off'))
+    .map((c) => c.textContent);
+}
+
+/** ② 按意境稿成诗 */
+async function composeFromTheme({ again = false } = {}) {
+  const text = ui.themeText.value.trim();
+  if (text.length < 4) {
+    ui.themeError.textContent = '意境稿太短了，再补两句';
+    ui.themeText.focus();
+    return;
+  }
+  ui.themeError.textContent = '';
+
+  const chips = pickedImagery();
+  const imagery = { ...(state.imagery || {}), core_imagery: chips };
+  const avoid = again && state.poem ? [state.poem.lines.join(' / ')] : [];
+
+  setBusy(true, '成诗');
+  show('loading');
+  progress(2);
+  try {
     const data = await api('/api/poem', {
       method: 'POST',
       body: {
         imagery,
+        theme: text,
         form: state.form,
         style: state.style,
         strict: state.strict,
@@ -313,7 +430,8 @@ async function generate({ again = false } = {}) {
       },
     });
     progress(3);
-    await new Promise((r) => setTimeout(r, 260));
+    await new Promise((r) => setTimeout(r, 240));
+    renderImagery(chips);
     renderPoem(data);
     show('result');
     if (again) toast('已换一首');
@@ -326,15 +444,43 @@ async function generate({ again = false } = {}) {
   }
 }
 
+/** 跳过润色：直接拿原话成诗（模型仍然能看到原话） */
+function composeFromRaw() {
+  const description = ui.description.value.trim();
+  if (description.length < 2) {
+    ui.themeError.textContent = '请先写下一段意境';
+    return;
+  }
+  ui.themeText.value = description;
+  ui.themeChips.innerHTML = '';
+  state.themeSource = 'user';
+  composeFromTheme();
+}
+
 ui.form.addEventListener('submit', (e) => {
   e.preventDefault();
   if (state.busy) return;
-  generate();
+  polish();
 });
 
-ui.retry.addEventListener('click', () => generate());
+ui.retry.addEventListener('click', () => {
+  if (state.busy) return;
+  // 已经润过稿就接着用，别让用户白等一次
+  if (ui.themeText.value.trim().length > 4) composeFromTheme();
+  else polish();
+});
 ui.btnAgain.addEventListener('click', () => {
-  if (!state.busy) generate({ again: true });
+  if (!state.busy) composeFromTheme({ again: true });
+});
+
+ui.btnCompose.addEventListener('click', () => {
+  if (!state.busy) composeFromTheme();
+});
+ui.btnRepolish.addEventListener('click', () => {
+  if (!state.busy) polish();
+});
+ui.btnSkipTheme.addEventListener('click', () => {
+  if (!state.busy) composeFromRaw();
 });
 
 /* ---------------- 操作 ---------------- */

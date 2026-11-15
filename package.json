@@ -3,11 +3,12 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "诗境 · 意境成诗 —— 三段式古诗生成应用（本地服务版）",
+  "description": "诗境 · 意境成诗 —— 四段式古诗生成应用（本地服务版）",
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node server/index.js",
     "dev": "node server/index.js",
+    "test:pipeline": "node scripts/test-pipeline.mjs",
     "preview": "npm run build && wrangler pages dev dist",
     "deploy": "npm run build && wrangler pages deploy dist",
     "db:create": "wrangler d1 create yinshi-db",

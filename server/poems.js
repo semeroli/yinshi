@@ -234,7 +234,11 @@ const LEXICON = [
 
 const EMOTION_RULES = [
   { keys: ['豪', '壮', '雄', '塞', '战', '剑', '功名', '铁马', '金戈', '大漠', '旌旗'], emotion: '雄浑', style: '豪放' },
-  { keys: ['思', '念', '愁', '离', '别', '孤', '独', '忆', '怅', '怨'], emotion: '怅惘', style: '婉约' },
+  {
+    keys: ['思', '念', '想', '等', '盼', '愁', '离', '别', '孤', '独', '忆', '怅', '怨'],
+    emotion: '怅惘',
+    style: '婉约',
+  },
   { keys: ['静', '幽', '淡', '闲', '田', '禅', '山居', '清'], emotion: '冲淡', style: '冲淡' },
   { keys: ['艳', '丽', '春', '花', '霞', '楼'], emotion: '绮丽', style: '绮丽' },
 ];
@@ -338,18 +342,145 @@ export function composePoem(imagery, { form, style, strict = true, avoid = [] } 
 export function validatePoem(poem, form) {
   const needLen = form === '七言绝句' ? 7 : 5;
   const issues = [];
+  const bad = [];
   if (!poem || !Array.isArray(poem.lines) || poem.lines.length !== 4) {
     issues.push('句数不为4');
-    return { ok: false, issues, needLen };
+    return { ok: false, issues, needLen, bad: [0, 1, 2, 3] };
   }
   poem.lines.forEach((line, idx) => {
     if (typeof line !== 'string' || line.length !== needLen) {
       issues.push(`第${idx + 1}句为${String(line ?? '').length}字`);
+      bad.push(idx);
     }
   });
   const r1 = poem.lines[1]?.slice(-1);
   const r2 = poem.lines[3]?.slice(-1);
-  if (poem.rhyme_words && r1 !== poem.rhyme_words[0]) issues.push('第2句韵脚与声明不一致');
-  if (poem.rhyme_words && r2 !== poem.rhyme_words[1]) issues.push('第4句韵脚与声明不一致');
-  return { ok: issues.length === 0, issues, needLen };
+  if (poem.rhyme_words && r1 !== poem.rhyme_words[0]) {
+    issues.push('第2句韵脚与声明不一致');
+    bad.push(1);
+  }
+  if (poem.rhyme_words && r2 !== poem.rhyme_words[1]) {
+    issues.push('第4句韵脚与声明不一致');
+    bad.push(3);
+  }
+  return { ok: issues.length === 0, issues, needLen, bad: [...new Set(bad)].sort((a, b) => a - b) };
+}
+
+/**
+ * 声明的韵脚写错了、句子其实是对的 —— 这种"假出韵"很常见。
+ * 第 2、4 句末字相同却与 rhyme_words 不符时，改声明而不是改诗。
+ */
+export function syncRhymeWords(poem) {
+  const r1 = poem?.lines?.[1]?.slice(-1);
+  const r2 = poem?.lines?.[3]?.slice(-1);
+  if (!r1 || !r2 || r1 !== r2) return false;
+  const stated = Array.isArray(poem.rhyme_words) ? poem.rhyme_words : [];
+  if (stated[0] === r1 && stated[1] === r2) return false;
+  poem.rhyme_words = [r1, r2];
+  return true;
+}
+
+/* ---------------- 无模型时的降级：本地润色 ---------------- */
+
+const SEASON_LEAD = { 春: '春深', 夏: '夏长', 秋: '秋深', 冬: '岁寒', 不分季节: '闲日' };
+const TIME_LEAD = { 夜: '夜半', 黄昏: '日暮', 清晨: '晓起', 正午: '亭午', 不明: '闲时' };
+
+/**
+ * 把用户原话垫成一段意境稿（模型不可用时用）。
+ * 它不是"生成诗"，只是把描述补齐成可照着作诗的底本，所以宁拙勿巧。
+ *
+ * 🔴 意象只往「窗外 X 正好」这一个槽位里塞 —— 别的槽位硬塞会出
+ *    「远月已冷」「疏影在案」这种读不通的句子。通顺优先于贴合。
+ */
+export function localTheme(description, form = '自动', style = '自动') {
+  const parsed = parseImagery(description, form, style);
+  const im = parsed.core_imagery;
+  const lead = im[0] || '疏影';
+  const seasonW = SEASON_LEAD[parsed.season] || '闲日';
+  const timeW = TIME_LEAD[parsed.time] || '闲时';
+  // 「闲日闲时」这种叠字一眼就是模板，能省一个就省一个
+  const head = parsed.season === '不分季节' && parsed.time === '不明' ? '午后' : `${seasonW}${timeW}`;
+
+  let theme;
+  if (parsed.style_suggestion === '豪放') {
+    // 边塞题材套「独坐一室、残茶已冷」的骨架会前后打架，另起一套
+    theme = [
+      `${head}，匹马出关。塞上黄沙打面，孤城一角压在落日里。`,
+      '腰间剑冷，战袍未解，耳边只剩风声。',
+      '回首处家山已远，举头时雁字横空。',
+      '大漠连天，风正紧，胸中块垒尚未平。',
+    ].join('');
+  } else {
+    const closing =
+      parsed.style_suggestion === '冲淡'
+        ? '推窗见远山如黛，倒也无需再多说什么。'
+        : '推窗见远山如黛，才觉这一夜又将尽，而人不归。';
+    theme = [
+      `${head}，独坐一室。案上残茶已冷，檐角一声疏钟浮在薄雾里。`,
+      `窗外${lead}正好，却无人共看。`,
+      '风动帘影，墙上忽明忽暗。攒了半宿的话，终究无人可语。',
+      closing,
+    ].join('');
+  }
+
+  return {
+    theme,
+    imagery: im.slice(0, 5),
+    mood: parsed.emotion,
+    season: parsed.season,
+    time: parsed.time,
+    scene: String(description || '').trim().slice(0, 20),
+    form_suggestion: parsed.form_suggestion,
+    style_suggestion: parsed.style_suggestion,
+    source: 'local',
+  };
+}
+
+/* ---------------- 坏句替换（代替"整首换库存"） ---------------- */
+
+/**
+ * 从库存里挑句子，替换掉个别坏句。
+ *
+ * 🔴 只补"不承担押韵"的位置：索引 1、3 是二、四句（必须押韵），
+ *    从库存里换掉它们等于整首换韵；索引 0 若已入韵也不能碰。
+ *    所以真正可补的通常只有第 3 句 —— 这比整首丢弃划算得多。
+ */
+export function patchedLines(poem, needLen, badIdx = []) {
+  const lines = [...(poem.lines || [])];
+  const rhyme = new Set([lines[1]?.slice(-1), lines[3]?.slice(-1)].filter(Boolean));
+  const firstRhymes = rhyme.has(lines[0]?.slice(-1));
+  const taken = new Set(lines.filter(Boolean));
+  const patches = [];
+
+  for (const i of badIdx) {
+    if (i === 1 || i === 3) continue;
+    if (i === 0 && firstRhymes) continue;
+
+    const pool = [];
+    for (const p of POEMS) {
+      p.lines.forEach((line, j) => {
+        if (line.length !== needLen || taken.has(line)) return;
+        // 原诗的第 2/4 句是韵脚句，搬过来会把别人的韵带进来
+        if (j === 1 || j === 3) return;
+        // 末字撞上本诗韵脚，会被误读成这里也押韵
+        if (rhyme.has(line.slice(-1))) return;
+        let score = 0;
+        if (p.style === poem.style) score += 3;
+        if (p.season === poem.season) score += 2;
+        score +=
+          (p.imagery || []).filter((w) => (poem.imagery || []).some((x) => x.includes(w) || w.includes(x)))
+            .length * 2;
+        pool.push({ line, para: p.paraphrase?.[j] || '', score, id: `${p.id}-${j}` });
+      });
+    }
+    if (!pool.length) continue;
+
+    pool.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    const pick = pool[0];
+    lines[i] = pick.line;
+    taken.add(pick.line);
+    patches.push({ index: i, from: poem.lines?.[i] || '', to: pick.line, para: pick.para });
+  }
+
+  return { lines, patches };
 }

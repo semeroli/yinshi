@@ -127,9 +127,9 @@
           <!-- 加载状态 -->
           <div class="loading" id="loading-state" hidden>
             <div class="loading-steps">
-              <div class="lstep" data-step="1"><i></i><span>解析意象</span></div>
+              <div class="lstep" data-step="1"><i></i><span>润色意境</span></div>
               <div class="lstep" data-step="2"><i></i><span>依律成诗</span></div>
-              <div class="lstep" data-step="3"><i></i><span>逐字校对</span></div>
+              <div class="lstep" data-step="3"><i></i><span>逐句校对</span></div>
             </div>
             <div class="loading-paper">
               <div class="loading-line w70"></div>
@@ -139,8 +139,42 @@
             </div>
           </div>
 
+          <!-- 意境稿：先润色，改到满意再成诗 -->
+          <div class="theme-stage" id="theme-stage" hidden>
+            <div class="stage-head">
+              <h2 class="stage-title">先定立意</h2>
+              <span class="stage-src" id="theme-source"></span>
+            </div>
+            <p class="stage-tip">这是替你补全后的意境稿。哪里不像你想说的，直接改；成诗只照着这份稿子写。</p>
+
+            <label class="visually-hidden" for="theme-text">意境稿正文</label>
+            <textarea id="theme-text" class="theme-textarea" rows="6" maxlength="300"></textarea>
+
+            <div class="theme-chips-row">
+              <span class="block-label">意象</span>
+              <span class="block-hint">点一下可剔除</span>
+            </div>
+            <div class="imagery-chips theme-chips" id="theme-chips"></div>
+
+            <p class="error-text" id="theme-error" role="alert"></p>
+
+            <div class="stage-actions">
+              <button type="button" class="btn btn-primary" id="btn-compose">按此稿成诗</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-repolish">重写一版</button>
+              <button type="button" class="btn btn-text btn-sm" id="btn-skip-theme">不润色，直接用原话</button>
+            </div>
+          </div>
+
           <!-- 结果状态 -->
           <div class="poem-result" id="poem-result" hidden>
+            <details class="theme-recall" id="theme-recall" hidden>
+              <summary>
+                <span class="block-label">本次立意</span>
+                <span class="recall-hint">展开对照</span>
+              </summary>
+              <p id="theme-recall-text"></p>
+            </details>
+
             <div class="imagery-block">
               <span class="block-label">意象</span>
               <div class="imagery-chips" id="imagery-chips"></div>
@@ -176,6 +210,7 @@
             </div>
 
             <p class="validation" id="validation-note"></p>
+            <ul class="pipeline" id="pipeline-note" hidden></ul>
           </div>
 
           <!-- 错误状态 -->
