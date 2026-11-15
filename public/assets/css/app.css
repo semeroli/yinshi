@@ -593,6 +593,19 @@
   font-size: 12px;
 }
 
+/* 校验没过：换朱砂色 + 叹号，别让它跟"通过"长得一样 */
+.validation.is-bad {
+  align-items: flex-start;
+  line-height: 1.7;
+  color: var(--cinnabar);
+}
+
+.validation.is-bad::before {
+  content: "!";
+  color: var(--cinnabar);
+  font-weight: 700;
+}
+
 .result-error {
   flex: 1;
   display: flex;

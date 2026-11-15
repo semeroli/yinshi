@@ -307,12 +307,12 @@ async function runPoem(env, { imagery, theme, form, style, strict, avoid }) {
   /* —— ② 逐句诊断重写：最多两轮 —— */
   for (let round = 1; round <= 2 && !check.ok && channel !== 'demo'; round += 1) {
     const badNow = check.bad.slice();
-    const before = check.issues.length;
+    const beforeBad = badNow.length;
     const merged = await repairLines(env, poem, finalForm, check.issues, badNow, round);
     if (!merged) break;
 
     const next = validatePoem({ ...poem, lines: merged }, finalForm);
-    if (next.issues.length > before) {
+    if (next.bad.length > beforeBad) {
       steps.push({ step: 'fix', note: `第 ${round} 轮改完反而更差，已撤回` });
       break;
     }
@@ -325,23 +325,31 @@ async function runPoem(env, { imagery, theme, form, style, strict, avoid }) {
   if (!check.ok) {
     const patched = patchedLines(poem, needLen, check.bad);
     if (patched.patches.length) {
-      poem.lines = patched.lines;
-      patched.patches.forEach((pt) => {
-        if (pt.para && Array.isArray(poem.paraphrase)) poem.paraphrase[pt.index] = pt.para;
-      });
-      check = validatePoem(poem, finalForm);
-      steps.push({
-        step: 'patch',
-        note: `第 ${patched.patches.map((p) => p.index + 1).join('、')} 句改用本地诗句补齐，其余句子保留`,
-      });
+      const next = validatePoem({ ...poem, lines: patched.lines }, finalForm);
+      // 补完必须真的少坏句才算数，否则撤回 —— 防止"补两句、留下更烂的一三句"
+      if (next.bad.length < check.bad.length) {
+        poem.lines = patched.lines;
+        patched.patches.forEach((pt) => {
+          if (pt.para && Array.isArray(poem.paraphrase)) poem.paraphrase[pt.index] = pt.para;
+        });
+        check = next;
+        steps.push({
+          step: 'patch',
+          note: `第 ${patched.patches.map((p) => p.index + 1).join('、')} 句改用本地诗句补齐，其余句子保留`,
+        });
+      } else {
+        steps.push({ step: 'patch', note: '库存补句没能让坏句变少，已撤回' });
+      }
     }
   }
 
   /* —— ④ 整首回落：最后一步，才换库存 —— */
-  if (!check.ok) {
+  if (!check.ok && check.bad.length >= 2) {
     const local = composePoem(imagery, { form: finalForm, style: finalStyle, strict, avoid });
     const localCheck = validatePoem(local, finalForm);
-    if (localCheck.issues.length < check.issues.length) {
+    // 🔴 判据用「坏句数」而不是「问题条数」：
+    //    一条「第N句为5字」和一个「句数不为4」不是等价的。
+    if (localCheck.bad.length < check.bad.length) {
       poem = local;
       check = localCheck;
       channel = 'demo';
@@ -350,10 +358,21 @@ async function runPoem(env, { imagery, theme, form, style, strict, avoid }) {
     }
   }
 
+  // 句子被改过之后，声明的韵脚可能又对不上了 —— 以句子为准再同步一次
+  if (syncRhymeWords(poem)) {
+    check = validatePoem(poem, finalForm);
+    steps.push({ step: 'rhyme-sync', note: '韵脚声明与句尾对不上，已按句子改正（诗未改动）' });
+  }
+
+  // 标签要跟"用户选的体裁 + 校验口径"一致。诗的实际体裁对不上时如实报出来，
+  // 别让人选了七言、标签上却写五言。
+  const formMismatch = Boolean(poem.form) && poem.form !== finalForm;
   const result = {
     poem,
     channel,
-    form: poem.form || finalForm,
+    form: formMismatch ? poem.form : finalForm,
+    form_requested: finalForm,
+    form_mismatch: formMismatch,
     style: poem.style || finalStyle,
     validation: {
       ok: check.ok,

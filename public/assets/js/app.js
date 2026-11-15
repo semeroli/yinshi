@@ -289,27 +289,42 @@ function renderPoem(data) {
   }
 
   const ok = data.validation?.ok;
-  const needLen = form === '七言绝句' ? 7 : 5;
+  // 校验是按「用户所选体裁」做的，字数提示也得按它算 —— 别用诗自己的 form，
+  // 那可能是库存降级后的另一体裁（选了七言却按五言算，提示就自相矛盾）。
+  const askedForm = data.form_requested || form;
+  const needLen = askedForm === '七言绝句' ? 7 : 5;
+  const badList = Array.isArray(data.validation?.bad) ? data.validation.bad : [];
   ui.validation.textContent = ok
     ? `程序校验通过：每句 ${needLen} 字，二、四句押韵${
         data.validation.repaired ? '（中途改过坏句）' : ''
       }`
-    : `校验提示：${(data.validation?.issues || []).join('；')}。已保留最好的一版，可点「换一首」重来。`;
+    : `⚠️ 这首没通过格律校验：${(data.validation?.issues || []).join('；')}。${
+        badList.length ? `第 ${badList.map((i) => i + 1).join('、')} 句字数不对。` : ''
+      }建议点「换一首」。`;
+  ui.validation.classList.toggle('is-bad', !ok);
+
+  if (ui.poemFormTag && data.form_mismatch) {
+    ui.poemFormTag.textContent = `${form}（你要的是${askedForm}）`;
+  }
 
   // 兜底轨迹：哪一句被改过、为什么，全部摊开写出来
   const trail = Array.isArray(data.pipeline) ? data.pipeline.filter((s) => s && s.note) : [];
   ui.pipelineNote.innerHTML = '';
-  if (trail.length) {
-    trail.forEach((s) => {
-      const li = document.createElement('li');
-      li.dataset.step = s.step || '';
-      li.textContent = s.note;
-      ui.pipelineNote.appendChild(li);
-    });
-    ui.pipelineNote.hidden = false;
-  } else {
-    ui.pipelineNote.hidden = true;
+  // 上游为什么没接上，光藏在鼠标悬停的 title 里没人看得到 —— 直接写出来，
+  // 用户反馈"怎么总是本地诗库"时才有话可查
+  if (data.fallback_reason) {
+    const li = document.createElement('li');
+    li.dataset.step = 'reason';
+    li.textContent = `模型没有接上：${String(data.fallback_reason).slice(0, 120)}`;
+    ui.pipelineNote.appendChild(li);
   }
+  trail.forEach((s) => {
+    const li = document.createElement('li');
+    li.dataset.step = s.step || '';
+    li.textContent = s.note;
+    ui.pipelineNote.appendChild(li);
+  });
+  ui.pipelineNote.hidden = ui.pipelineNote.children.length === 0;
 
   // 立意回显：让人能对着稿子核一遍
   const themeText = String(data.theme || '').trim();

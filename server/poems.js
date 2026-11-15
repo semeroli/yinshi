@@ -297,13 +297,22 @@ function pickMost(list) {
 
 /** ② 格律成诗（演示：按意象/风格/体裁匹配诗词库） */
 export function composePoem(imagery, { form, style, strict = true, avoid = [] } = {}) {
-  const wantedForm = FORMS.includes(form) ? form : imagery.form_suggestion || '五言绝句';
+  // 🔴 用户明确点了体裁就以它为准，只在该体裁的池子里挑。
+  //    以前这里只给「同体裁 +5 分」，其它项的意象/风格分能压过去：
+  //    选了七言却挑出五言的《山居》，后面按七言口径校验 ⇒ 全首坏句 ⇒ 长短句。
+  const explicitForm = FORMS.includes(form) ? form : '';
+  const wantedForm = explicitForm || (FORMS.includes(imagery.form_suggestion) ? imagery.form_suggestion : '五言绝句');
   const wantedStyle = STYLES.includes(style) ? style : imagery.style_suggestion;
 
   const avoidNorm = (avoid || []).map((s) =>
     String(s).replace(/[\s/｜|、,，。；;]/g, ''),
   );
-  const scored = POEMS.filter((p) => !avoidNorm.includes(p.lines.join(''))).map((p) => {
+  const usable = POEMS.filter((p) => !avoidNorm.includes(p.lines.join('')));
+  const sameForm = explicitForm ? usable.filter((p) => p.form === explicitForm) : usable;
+  // 同体裁池被 avoid 清空时不硬撑，退回全体（但会带 formDowngraded 标记）
+  const base = sameForm.length ? sameForm : usable.length ? usable : POEMS;
+
+  const scored = base.map((p) => {
     let score = 0;
     if (p.form === wantedForm) score += 5;
     if (p.style === wantedStyle) score += 3;
@@ -315,6 +324,7 @@ export function composePoem(imagery, { form, style, strict = true, avoid = [] } 
 
   scored.sort((a, b) => b.score - a.score || a.p.id.localeCompare(b.p.id));
   const chosen = scored[0] ? scored[0].p : POEMS[0];
+  const formDowngraded = Boolean(explicitForm) && chosen.form !== explicitForm;
 
   const needLen = chosen.form === '五言绝句' ? 5 : 7;
   const lastChars = [chosen.lines[1].slice(-1), chosen.lines[3].slice(-1)];
@@ -335,6 +345,7 @@ export function composePoem(imagery, { form, style, strict = true, avoid = [] } 
     form: chosen.form,
     demo: true,
     strict,
+    formDowngraded,
   };
 }
 
@@ -355,25 +366,30 @@ export function validatePoem(poem, form) {
   });
   const r1 = poem.lines[1]?.slice(-1);
   const r2 = poem.lines[3]?.slice(-1);
+  // ⚠️ 声明写错只是"元数据错"，不是"这句得重写"——所以只记 issue，不进 bad。
+  //    进 bad 的后果很严重：第 1、3 句恰好是 patchedLines 不许碰的韵脚句，
+  //    一句声明笔误会让整首诗被判"修不了"，白白丢掉换成本地库存。
   if (poem.rhyme_words && r1 !== poem.rhyme_words[0]) {
     issues.push('第2句韵脚与声明不一致');
-    bad.push(1);
   }
   if (poem.rhyme_words && r2 !== poem.rhyme_words[1]) {
     issues.push('第4句韵脚与声明不一致');
-    bad.push(3);
   }
   return { ok: issues.length === 0, issues, needLen, bad: [...new Set(bad)].sort((a, b) => a - b) };
 }
 
 /**
  * 声明的韵脚写错了、句子其实是对的 —— 这种"假出韵"很常见。
- * 第 2、4 句末字相同却与 rhyme_words 不符时，改声明而不是改诗。
+ * 以句子为准，改声明而不是改诗。
+ *
+ * 注意：第 2、4 句末字**不必相同**（生 / 明 同韵部，字不同），
+ * 所以不能要求 r1 === r2 才同步 —— 那会让「生/明 + 声明写错」这种情况
+ * 既不同步、又被判不一致，最后整首诗被丢掉。
  */
 export function syncRhymeWords(poem) {
   const r1 = poem?.lines?.[1]?.slice(-1);
   const r2 = poem?.lines?.[3]?.slice(-1);
-  if (!r1 || !r2 || r1 !== r2) return false;
+  if (!r1 || !r2) return false;
   const stated = Array.isArray(poem.rhyme_words) ? poem.rhyme_words : [];
   if (stated[0] === r1 && stated[1] === r2) return false;
   poem.rhyme_words = [r1, r2];
@@ -451,6 +467,12 @@ export function patchedLines(poem, needLen, badIdx = []) {
   const firstRhymes = rhyme.has(lines[0]?.slice(-1));
   const taken = new Set(lines.filter(Boolean));
   const patches = [];
+
+  // 🔴 整首字数就不对（比如选了七言、底稿是五言）时，补两句只会拼出
+  //    「五言+七言」的长短句：补的两句是七言、留下的一三句仍是五言。
+  //    这种局面必须交给整首回落，不许在这里硬凑。
+  const wrongLen = lines.filter((l) => String(l || '').length !== needLen).length;
+  if (wrongLen >= 2) return { lines, patches: [] };
 
   for (const i of badIdx) {
     if (i === 1 || i === 3) continue;

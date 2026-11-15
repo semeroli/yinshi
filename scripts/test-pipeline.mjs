@@ -330,6 +330,47 @@ mode = 'allDown';
 const t5b = await post('/api/theme', { description: DESC.allDown });
 ok(t5b.body?.cached !== true, '降级的润色稿没有被缓存 24 小时', JSON.stringify(t5b.body?.cached));
 
+/* ===== 场景 6：选了七言绝句，必须真的七言，不许出长短句 =====
+   线上真实事故：意境「雨后空山，松间清泉」+ 七言 + 冲淡，
+   库存按意象分挑了五言的《山居》，再按七言口径补句 ⇒
+   「石径盘云上翠微 / 松径落云深 / 忽闻岭外钟声起 / 苔痕上石心」。 */
+console.log('\n[6] 明确选七言 → 整首七言（不许五言七言混着来）');
+mode = 'allDown';
+calls.length = 0;
+const p6 = await post('/api/poem', {
+  imagery: { core_imagery: ['空山', '松林', '微雨', '苔痕'], form_suggestion: '七言绝句' },
+  theme: '雨后空山，松间清泉。苔痕浸石，风过松梢。',
+  form: '七言绝句',
+  style: '冲淡',
+  strict: true,
+});
+const lines6 = p6.body?.poem?.lines || [];
+ok(lines6.length === 4, '给出四句', `lines=${lines6.length}`);
+ok(
+  lines6.every((l) => l.length === 7),
+  '每句都是 7 字',
+  lines6.map((l) => `${l}(${l.length})`).join(' / '),
+);
+ok(p6.body?.validation?.ok === true, '校验通过', (p6.body?.validation?.issues || []).join(';'));
+ok(p6.body?.form === '七言绝句', '标出来的体裁是七言', p6.body?.form);
+ok(p6.body?.form_mismatch !== true, '没有发生体裁降级');
+
+// 反过来：选五言就必须五言
+const p6b = await post('/api/poem', {
+  imagery: { core_imagery: ['空山', '松林', '微雨', '苔痕'], form_suggestion: '五言绝句' },
+  theme: '雨后空山，松间清泉。苔痕浸石，风过松梢。',
+  form: '五言绝句',
+  style: '冲淡',
+  strict: true,
+});
+const lines6b = p6b.body?.poem?.lines || [];
+ok(
+  lines6b.length === 4 && lines6b.every((l) => l.length === 5),
+  '选五言时每句 5 字',
+  lines6b.map((l) => `${l}(${l.length})`).join(' / '),
+);
+ok(p6b.body?.validation?.ok === true, '五言这版校验通过');
+
 /* ---------------- 收尾 ---------------- */
 
 console.log(`\n${'='.repeat(52)}`);
