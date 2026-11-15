@@ -48,6 +48,7 @@ import {
   issueSession,
   clearSession,
   getUserFromRequest,
+  updateUserPassword,
   cacheGet,
   cacheSet,
   cacheKey,
@@ -65,6 +66,55 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT || 0);
 const DEMO_MODE = !hasOnlineModel();
+
+/* ---------------- 用户统计与密码校验 ---------------- */
+
+const CN_OFFSET = 8 * 60 * 60 * 1000;
+
+/** '2026-11-15 05:04:33'（D1，UTC）/ '2026-11-15T05:04:33.000Z'（JSON 文件）都能吃 */
+function toMs(value) {
+  if (!value) return NaN;
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    return Date.parse(`${s.replace(' ', 'T')}Z`);
+  }
+  return Date.parse(s);
+}
+
+/** 北京时间某一天 00:00 对应的 UTC 毫秒 */
+function cnDayStart(daysAgo = 0) {
+  const cn = new Date(Date.now() + CN_OFFSET);
+  const start = Date.UTC(cn.getUTCFullYear(), cn.getUTCMonth(), cn.getUTCDate()) - CN_OFFSET;
+  return start - daysAgo * 86400000;
+}
+
+/**
+ * 统计口径一律按北京时间算。
+ * ⚠️ 别直接用 new Date(created_at) 比日期 —— 库里存的是 UTC，
+ *    北京时间每天 0~8 点注册的人会被算到「昨天」，早上看数据会以为没人注册。
+ */
+function userStats(users) {
+  const todayStart = cnDayStart(0);
+  const weekStart = cnDayStart(6);
+  const count = (fn) => users.filter(fn).length;
+  return {
+    total: users.length,
+    admins: count((u) => Boolean(u.is_admin)),
+    active: count((u) => u.status === 'active'),
+    disabled: count((u) => u.status !== 'active'),
+    today: users.filter((u) => toMs(u.created_at) >= todayStart).length,
+    week: users.filter((u) => toMs(u.created_at) >= weekStart).length,
+  };
+}
+
+function checkNewPassword(pwd) {
+  const p = String(pwd ?? '');
+  if (!p) return '请输入新密码';
+  if (p.length < 6) return '新密码至少 6 位';
+  if (p.length > 64) return '新密码最长 64 位';
+  if (!p.trim()) return '密码不能全是空格';
+  return '';
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -411,7 +461,7 @@ async function handleApi(req, res, pathname, url) {
 
     const user = createUser({ username, email, password });
     touchLogin(user.id);
-    return send(res, 200, { user: publicUser(user) }, { 'Set-Cookie': issueSession(user.id) });
+    return send(res, 200, { user: publicUser(user) }, { 'Set-Cookie': issueSession(user.id, user.password_hash) });
   }
 
   if (pathname === '/api/auth/login' && req.method === 'POST') {
@@ -428,7 +478,7 @@ async function handleApi(req, res, pathname, url) {
       return send(res, 403, { error: '账号已被停用，请联系管理员' });
     }
     touchLogin(user.id);
-    return send(res, 200, { user: publicUser(user) }, { 'Set-Cookie': issueSession(user.id) });
+    return send(res, 200, { user: publicUser(user) }, { 'Set-Cookie': issueSession(user.id, user.password_hash) });
   }
 
   if (pathname === '/api/auth/logout' && req.method === 'POST') {
@@ -575,15 +625,32 @@ async function handleApi(req, res, pathname, url) {
     const user = getUserFromRequest(req);
     if (!user) return send(res, 401, { error: '请先登录' });
     if (!user.is_admin) return send(res, 403, { error: '无权访问：仅管理员可见' });
-    const users = listUsers();
-    return send(res, 200, {
-      users,
-      stats: {
-        total: users.length,
-        admins: users.filter((u) => u.is_admin).length,
-        active: users.filter((u) => u.status === 'active').length,
-      },
-    });
+    const users = listUsers()
+      .map(publicUser)
+      .sort((a, b) => b.id - a.id);
+    return send(res, 200, { users, stats: userStats(users) });
+  }
+
+  const adminUserMatch = pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+  if (adminUserMatch && req.method === 'PATCH') {
+    const me = getUserFromRequest(req);
+    if (!me) return send(res, 401, { error: '请先登录' });
+    if (!me.is_admin) return send(res, 403, { error: '无权访问：仅管理员可操作' });
+    if (!rateLimit(`admin:pwd:${ip}`, 20, 60 * 60 * 1000)) {
+      return send(res, 429, { error: '操作过于频繁，请稍后再试' });
+    }
+
+    const id = Number(adminUserMatch[1]);
+    const body = await readBody(req);
+    const password = String(body.password ?? '');
+    const pwdErr = checkNewPassword(password);
+    if (pwdErr) return send(res, 400, { error: pwdErr });
+
+    const updated = updateUserPassword(id, password);
+    if (!updated) return send(res, 404, { error: '用户不存在' });
+
+    console.log(`[admin] ${me.username} 重置了 #${id} ${updated.username} 的密码`);
+    return send(res, 200, { ok: true, user: publicUser(updated) });
   }
 
   return send(res, 404, { error: '接口不存在' });

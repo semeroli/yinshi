@@ -66,6 +66,12 @@ const memoryStore = {
     const u = await this.findUserById(id);
     if (u) u.last_login_at = new Date().toISOString();
   },
+  async updateUserPassword(id, passwordHash) {
+    const u = await this.findUserById(id);
+    if (!u) return null;
+    u.password_hash = passwordHash;
+    return u;
+  },
   async listUsers() {
     return [...mem.users].sort((a, b) => a.id - b.id);
   },
@@ -149,6 +155,14 @@ function d1Store(db) {
         .prepare('UPDATE users SET last_login_at = ? WHERE id = ?')
         .bind(new Date().toISOString(), Number(id))
         .run();
+    },
+    async updateUserPassword(id, passwordHash) {
+      const res = await db
+        .prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .bind(passwordHash, Number(id))
+        .run();
+      if (res?.meta && typeof res.meta.changes === 'number' && res.meta.changes === 0) return null;
+      return this.findUserById(id);
     },
     async listUsers() {
       const { results } = await db.prepare('SELECT * FROM users ORDER BY id ASC').all();

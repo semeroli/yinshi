@@ -20,7 +20,9 @@
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 5 格靠 auto-fit 自己折行。⚠️ 这条必须写在 640px 媒体查询**前面**，
+     否则后写的同特异性规则会把手机端的单列压掉。 */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 22px;
 }
@@ -273,4 +275,250 @@ tbody td:nth-child(2) {
 .op[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+
+/* ============================================================
+   用户管理：5 格统计 + 搜索 + 改密码弹窗
+   ============================================================ */
+
+/* 5 格统计的列数在文件开头的 .stats 里统一管，这里不要再写一次 */
+
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.search-box {
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.search-box input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--ink);
+  background: rgba(255, 253, 247, 0.85);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.search-box input:focus {
+  outline: none;
+  border-color: rgba(195, 39, 43, 0.5);
+  box-shadow: 0 0 0 3px var(--cinnabar-soft);
+}
+
+.toolbar-hint {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-4);
+}
+
+.tag.muted {
+  color: var(--ink-3);
+  background: rgba(43, 43, 43, 0.06);
+}
+
+.empty-cell {
+  padding: 42px 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+/* 列多了，横滚阈值跟着放宽。⚠️ 只限用户表 —— 文章表列少，不该跟着变宽 */
+.table-panel table.user-table {
+  min-width: 880px;
+}
+
+.pwd-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 0;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.pwd-dialog::backdrop {
+  background: rgba(43, 43, 43, 0.38);
+}
+
+.pwd-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+
+.pwd-dialog h2 {
+  font-size: 17px;
+  letter-spacing: 0.16em;
+}
+
+.pwd-target {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.pwd-target strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pwd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pwd-field span {
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  color: var(--ink-3);
+}
+
+.pwd-field input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: #fffdf7;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+}
+
+.pwd-field input:focus {
+  outline: none;
+  border-color: rgba(195, 39, 43, 0.55);
+  box-shadow: 0 0 0 3px var(--cinnabar-soft);
+}
+
+.pwd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pwd-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.pwd-hint {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-3);
+}
+
+.pwd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.pwd-dialog .error-text {
+  min-height: 0;
+}
+
+.pwd-dialog .error-text:empty {
+  display: none;
+}
+
+/* 手机上 8 列要横滚，「改密码」在最右边会滚丢 —— 把操作列钉在右侧 */
+@media (max-width: 640px) {
+  /* ⚠️ 顶栏这块在 app.css 里也有，但后台页面不加载 app.css ⇒ 390px 下
+     「创作台/诗话/文章/用户名/退出」六个元素放不下，整页被顶出 11px 横滚 */
+  .topnav .user-name {
+    display: none;
+  }
+  .topnav a,
+  .topnav button {
+    padding: 8px 9px;
+    font-size: 13px;
+  }
+
+  /* 8 列在 390px 上只能横滚，邮箱被切一半读不了 ⇒ 换成一条一台的卡片式。
+     靠 JS 写进 td 的 data-label 当左边的字段名。 */
+  .table-scroll {
+    overflow-x: visible;
+  }
+  .user-table,
+  .table-panel table.user-table {
+    min-width: 0;
+  }
+  .user-table thead {
+    display: none;
+  }
+  .user-table tr {
+    display: block;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .user-table tr:last-child {
+    border-bottom: 0;
+  }
+  .user-table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+    border: 0;
+    text-align: right;
+    position: static;
+    background: none;
+    box-shadow: none;
+    /* 桌面靠横滚，手机得允许长邮箱折行，否则冲出卡片 */
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .user-table td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--ink-4);
+  }
+  .user-table td.empty-cell {
+    display: block;
+    text-align: center;
+  }
+  .user-table td.empty-cell::before {
+    content: '';
+  }
+  /* 编号是内部 id，手机上占一行不值当 */
+  .user-table td[data-label='编号'] {
+    display: none;
+  }
+  .user-table td.cell-ops {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+    justify-content: flex-end;
+  }
+  .user-table td.cell-ops::before {
+    content: '';
+  }
+  .user-table td.cell-ops .op {
+    padding: 7px 16px;
+    border: 1px solid var(--line);
+  }
 }

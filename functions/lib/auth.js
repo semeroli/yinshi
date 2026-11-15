@@ -67,8 +67,19 @@ async function sign(payload, secret) {
   return b64url(sig);
 }
 
-export async function issueSessionCookie(userId, secret, secure = true) {
-  const payload = b64url(enc.encode(JSON.stringify({ u: userId, exp: Date.now() + SESSION_TTL_MS })));
+/**
+ * 会话里存的是"当前密码哈希的指纹"。
+ * 密码一改，指纹就变，旧 cookie 立刻作废 —— 不用给 users 表加字段，也不用迁移。
+ */
+export async function sessionTag(passwordHash) {
+  const bits = await crypto.subtle.digest('SHA-256', enc.encode(String(passwordHash || '')));
+  return toHex(bits).slice(0, 10);
+}
+
+export async function issueSessionCookie(userId, secret, secure = true, passwordHash = '') {
+  const payload = b64url(
+    enc.encode(JSON.stringify({ u: userId, ph: await sessionTag(passwordHash), exp: Date.now() + SESSION_TTL_MS })),
+  );
   const token = `${payload}.${await sign(payload, secret)}`;
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
   return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${
@@ -90,7 +101,8 @@ export function parseCookies(header = '') {
     }, {});
 }
 
-export async function readSessionUserId(request, secret) {
+/** 返回 { id, ph } 或 null（ph 是签发时的密码指纹，用于让旧会话失效） */
+export async function readSession(request, secret) {
   const token = parseCookies(request.headers.get('cookie') || '')[COOKIE_NAME];
   if (!token) return null;
   const [payload, sig] = token.split('.');
@@ -103,8 +115,14 @@ export async function readSessionUserId(request, secret) {
   try {
     const data = JSON.parse(new TextDecoder().decode(b64urlDecode(payload)));
     if (!data.exp || data.exp < Date.now()) return null;
-    return data.u;
+    return { id: data.u, ph: data.ph || '' };
   } catch {
     return null;
   }
+}
+
+/** 只要 id 的旧用法保留 */
+export async function readSessionUserId(request, secret) {
+  const s = await readSession(request, secret);
+  return s ? s.id : null;
 }

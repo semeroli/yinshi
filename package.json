@@ -9,6 +9,7 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "test:pipeline": "node scripts/test-pipeline.mjs",
+    "test:admin": "node scripts/test-admin.mjs",
     "preview": "npm run build && wrangler pages dev dist",
     "deploy": "npm run build && wrangler pages deploy dist",
     "db:create": "wrangler d1 create yinshi-db",

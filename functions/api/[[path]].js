@@ -32,7 +32,8 @@ import {
   verifyPassword,
   issueSessionCookie,
   clearSessionCookie,
-  readSessionUserId,
+  readSession,
+  sessionTag,
 } from '../lib/auth.js';
 
 /* ---------------- 工具 ---------------- */
@@ -58,15 +59,66 @@ function isDemo(env) {
   return !hasOnlineModel(env);
 }
 
+/* ---------------- 用户统计与密码校验 ---------------- */
+
+const CN_OFFSET = 8 * 60 * 60 * 1000;
+
+/** '2026-11-15 05:04:33'（D1 的 datetime('now')，UTC）/ '2026-11-15T05:04:33.000Z'（JSON 文件）都能吃 */
+function toMs(value) {
+  if (!value) return NaN;
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    return Date.parse(`${s.replace(' ', 'T')}Z`);
+  }
+  return Date.parse(s);
+}
+
+/** 北京时间某一天 00:00 对应的 UTC 毫秒 */
+function cnDayStart(daysAgo = 0) {
+  const cn = new Date(Date.now() + CN_OFFSET);
+  const start = Date.UTC(cn.getUTCFullYear(), cn.getUTCMonth(), cn.getUTCDate()) - CN_OFFSET;
+  return start - daysAgo * 86400000;
+}
+
+/**
+ * 统计口径一律按北京时间算。
+ * ⚠️ 别直接用 new Date(created_at) 比日期 —— 库里存的是 UTC，
+ *    北京时间每天 0~8 点注册的用户会被算到「昨天」，管理员早上看数据会以为没人注册。
+ */
+function userStats(users) {
+  const todayStart = cnDayStart(0);
+  const weekStart = cnDayStart(6);
+  const count = (fn) => users.filter(fn).length;
+  return {
+    total: users.length,
+    admins: count((u) => Boolean(u.is_admin)),
+    active: count((u) => u.status === 'active'),
+    disabled: count((u) => u.status !== 'active'),
+    today: users.filter((u) => toMs(u.created_at) >= todayStart).length,
+    week: users.filter((u) => toMs(u.created_at) >= weekStart).length,
+  };
+}
+
+function checkNewPassword(pwd) {
+  const p = String(pwd ?? '');
+  if (!p) return '请输入新密码';
+  if (p.length < 6) return '新密码至少 6 位';
+  if (p.length > 64) return '新密码最长 64 位';
+  if (!p.trim()) return '密码不能全是空格';
+  return '';
+}
+
 function secretOf(env) {
   return env.JWT_SECRET || 'dev-only-change-me-in-production';
 }
 
 async function currentUser(request, env, store) {
-  const uid = await readSessionUserId(request, secretOf(env));
-  if (!uid) return null;
-  const user = await store.findUserById(uid);
+  const sess = await readSession(request, secretOf(env));
+  if (!sess) return null;
+  const user = await store.findUserById(sess.id);
   if (!user || user.status !== 'active') return null;
+  // 密码被管理员重置过 ⇒ 这张票是旧密码签发的，作废
+  if (!sess.ph || sess.ph !== (await sessionTag(user.password_hash))) return null;
   return user;
 }
 
@@ -407,7 +459,7 @@ export async function onRequest(context) {
       });
       await store.touchLogin(user.id);
       return json({ user: publicUser(user) }, 200, {
-        'Set-Cookie': await issueSessionCookie(user.id, secretOf(env), secure),
+        'Set-Cookie': await issueSessionCookie(user.id, secretOf(env), secure, user.password_hash),
       });
     }
 
@@ -421,7 +473,7 @@ export async function onRequest(context) {
       if (user.status !== 'active') return json({ error: '账号已被停用，请联系管理员' }, 403);
       await store.touchLogin(user.id);
       return json({ user: publicUser(user) }, 200, {
-        'Set-Cookie': await issueSessionCookie(user.id, secretOf(env), secure),
+        'Set-Cookie': await issueSessionCookie(user.id, secretOf(env), secure, user.password_hash),
       });
     }
 
@@ -552,15 +604,36 @@ export async function onRequest(context) {
       const user = await currentUser(request, env, store);
       if (!user) return json({ error: '请先登录' }, 401);
       if (!user.is_admin) return json({ error: '无权访问：仅管理员可见' }, 403);
-      const users = (await store.listUsers()).map(publicUser);
-      return json({
-        users,
-        stats: {
-          total: users.length,
-          admins: users.filter((u) => u.is_admin).length,
-          active: users.filter((u) => u.status === 'active').length,
-        },
-      });
+      const users = (await store.listUsers()).map(publicUser).sort((a, b) => b.id - a.id);
+      return json({ users, stats: userStats(users) });
+    }
+
+    const userMatch = pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+    if (userMatch && method === 'PATCH') {
+      const me = await currentUser(request, env, store);
+      if (!me) return json({ error: '请先登录' }, 401);
+      if (!me.is_admin) return json({ error: '无权访问：仅管理员可操作' }, 403);
+      if (!rateLimit(`admin:pwd:${ip}`, 20, 60 * 60 * 1000)) {
+        return json({ error: '操作过于频繁，请稍后再试' }, 429);
+      }
+
+      const id = Number(userMatch[1]);
+      const target = await store.findUserById(id);
+      if (!target) return json({ error: '用户不存在' }, 404);
+
+      const body = await readJson(request);
+      const password = String(body.password ?? '');
+      const pwdErr = checkNewPassword(password);
+      if (pwdErr) return json({ error: pwdErr }, 400);
+
+      const updated = await store.updateUserPassword(
+        id,
+        await hashPassword(password, Number(env.PBKDF2_ITERATIONS) || 100000),
+      );
+      if (!updated) return json({ error: '用户不存在' }, 404);
+
+      console.log(`[admin] ${me.username} 重置了 #${id} ${target.username} 的密码`);
+      return json({ ok: true, user: publicUser(updated) });
     }
 
     return json({ error: '接口不存在' }, 404);

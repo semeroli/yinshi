@@ -8,7 +8,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '..', 'data');
+// YS_DATA_DIR 只给测试用：回归脚本指到临时目录，别污染本地开发库
+const DATA_DIR = process.env.YS_DATA_DIR
+  ? path.resolve(process.env.YS_DATA_DIR)
+  : path.resolve(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-me-in-production';
@@ -90,6 +93,15 @@ export function touchLogin(id) {
   persist();
 }
 
+/** 管理员重置某个用户的密码。返回 null 表示该用户不存在。 */
+export function updateUserPassword(id, password) {
+  const user = findUserById(Number(id));
+  if (!user) return null;
+  user.password_hash = hashPassword(password);
+  persist();
+  return user;
+}
+
 export function listUsers() {
   return db.users.map((u) => ({
     id: u.id,
@@ -109,6 +121,7 @@ export function publicUser(user) {
     username: user.username,
     email: user.email,
     is_admin: Boolean(user.is_admin),
+    status: user.status || 'active',
     created_at: user.created_at,
     last_login_at: user.last_login_at,
   };
@@ -229,15 +242,23 @@ function sign(data) {
   return crypto.createHmac('sha256', JWT_SECRET).update(data).digest('base64url');
 }
 
-export function issueSession(userId) {
+export function issueSession(userId, passwordHash = '') {
   const payload = Buffer.from(
-    JSON.stringify({ u: userId, exp: Date.now() + SESSION_TTL_MS }),
+    JSON.stringify({ u: userId, ph: sessionTag(passwordHash), exp: Date.now() + SESSION_TTL_MS }),
   ).toString('base64url');
   const token = `${payload}.${sign(payload)}`;
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
   return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${
     process.env.NODE_ENV === 'production' ? '; Secure' : ''
   }`;
+}
+
+/**
+ * 会话里存的是"当前密码哈希的指纹"。
+ * 密码一改，指纹就变，旧 cookie 立刻作废 —— 不用给 users 表加字段，也不用迁移。
+ */
+export function sessionTag(passwordHash) {
+  return crypto.createHash('sha256').update(String(passwordHash || '')).digest('hex').slice(0, 10);
 }
 
 export function clearSession() {
@@ -266,6 +287,8 @@ export function getUserFromRequest(req) {
     if (!data.exp || data.exp < Date.now()) return null;
     const user = findUserById(data.u);
     if (!user || user.status !== 'active') return null;
+    // 密码被管理员重置过 ⇒ 这个 cookie 是旧密码签发的，作废
+    if (!data.ph || data.ph !== sessionTag(user.password_hash)) return null;
     return user;
   } catch {
     return null;

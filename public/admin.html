@@ -43,18 +43,40 @@
           <strong id="stat-total">0</strong>
         </div>
         <div class="stat">
+          <span class="stat-label">今日新增</span>
+          <strong id="stat-today">0</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">近 7 天</span>
+          <strong id="stat-week">0</strong>
+        </div>
+        <div class="stat">
           <span class="stat-label">管理员</span>
           <strong id="stat-admins">0</strong>
         </div>
         <div class="stat">
-          <span class="stat-label">活跃</span>
-          <strong id="stat-active">0</strong>
+          <span class="stat-label">已停用</span>
+          <strong id="stat-disabled">0</strong>
         </div>
       </section>
 
+      <div class="admin-toolbar" id="toolbar" hidden>
+        <label class="search-box">
+          <span class="visually-hidden">搜索用户</span>
+          <input
+            type="search"
+            id="user-search"
+            placeholder="搜用户名 / 邮箱 / 编号"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <span class="toolbar-hint" id="list-hint"></span>
+      </div>
+
       <section class="table-panel" id="table-panel" hidden>
         <div class="table-scroll">
-          <table>
+          <table class="user-table">
             <thead>
               <tr>
                 <th scope="col">#</th>
@@ -64,6 +86,7 @@
                 <th scope="col">注册时间</th>
                 <th scope="col">最近登录</th>
                 <th scope="col">状态</th>
+                <th scope="col">操作</th>
               </tr>
             </thead>
             <tbody id="user-rows"></tbody>
@@ -83,6 +106,42 @@
         <a class="btn btn-ghost btn-sm" href="/app.html">回到创作台</a>
       </div>
     </main>
+
+    <dialog class="pwd-dialog" id="pwd-dialog" aria-labelledby="pwd-title">
+      <form id="pwd-form" novalidate>
+        <h2 id="pwd-title">重置密码</h2>
+        <p class="pwd-target">用户：<strong id="pwd-user"></strong></p>
+
+        <label class="pwd-field">
+          <span>新密码</span>
+          <input
+            type="password"
+            id="pwd-input"
+            name="password"
+            minlength="6"
+            maxlength="64"
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+        </label>
+
+        <div class="pwd-row">
+          <label class="pwd-show"><input type="checkbox" id="pwd-show" /> 显示密码</label>
+          <button type="button" class="btn btn-ghost btn-sm" id="pwd-copy">复制</button>
+        </div>
+
+        <p class="pwd-hint" id="pwd-hint">
+          6~64 位。改完后这个用户已登录的页面会立即失效，需要用新密码重新登录；
+          重置前建议先跟他确认一句。
+        </p>
+        <p class="error-text" id="pwd-error" role="alert"></p>
+
+        <div class="pwd-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="pwd-cancel">取消</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="pwd-submit">确认重置</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="/assets/js/api.js" type="module"></script>
     <script src="/assets/js/admin.js" type="module"></script>
