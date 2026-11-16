@@ -88,11 +88,14 @@ async function callOpenAICompatible(messages, { temperature, top_p, max_tokens, 
  * 🔴 2026-11-16 实测：原来那四个（Qwen3-8B / Qwen3-32B / Qwen2.5-7B-Instruct /
  *    DeepSeek-V3.1）全部下架，接口报 400 "has no provider supported"。
  *    现用清单来自 https://api-inference.modelscope.cn/v1/models（匿名可读）。
- *    候选别贪多：串行试会均分超时，润色只有 18 秒，放五个等于一个都出不来。
+ *
+ * 🔴 排序按线上实测：GLM-5.2 实测 2.85 秒真出内容；Qwen3.8-Flash-Next 虽然在架清单里
+ *    但实测没排上，退第二。第一位会吃掉一半预算，必须是"最确定"的那个。
+ *    候选别贪多：串行试会摊薄超时，润色只有 18 秒。
  */
 const DEFAULT_MODELS = [
-  'Qwen/Qwen3.8-Flash-Next',
   'ZhipuAI/GLM-5.2',
+  'Qwen/Qwen3.8-Flash-Next',
   'deepseek-ai/DeepSeek-V4.1-Flash',
 ];
 
@@ -100,6 +103,12 @@ let workingModel = '';
 /** 上一轮真正调通的模型名；自检接口靠它回报"用的哪个" */
 export function getWorkingModel() {
   return workingModel;
+}
+
+/** 最近一轮每个候选的失败原因（成功时也保留"前面那几个为什么没成"） */
+let lastModelErrors = [];
+export function getLastModelErrors() {
+  return lastModelErrors.slice(0, 6);
 }
 let modelScopeDownUntil = 0;
 let lastProbeAt = 0;
@@ -163,6 +172,7 @@ async function callModelScope(messages, { temperature, top_p, max_tokens, timeou
       if (!content) throw new Error('模型返回为空');
       workingModel = name;
       modelScopeDownUntil = 0;
+      lastModelErrors = errors.slice();
       return content;
     } catch (err) {
       errors.push(`${name}: ${err.message}`);
@@ -171,6 +181,7 @@ async function callModelScope(messages, { temperature, top_p, max_tokens, timeou
   }
   modelScopeDownUntil = Date.now() + OUTAGE_MS;
   lastProbeAt = Date.now();
+  lastModelErrors = errors.slice();
   throw new Error(errors.join(' | ').slice(0, 400));
 }
 

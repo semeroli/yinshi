@@ -39,6 +39,7 @@ import {
   hasOnlineModel,
   hasSenseNova,
   getWorkingModel,
+  getLastModelErrors,
   STEP_TIMEOUT,
 } from './model.js';
 import {
@@ -482,6 +483,7 @@ async function handleApi(req, res, pathname, url) {
         configured,
         channel,
         model: getWorkingModel() || '',
+        attempts: getLastModelErrors(),
         ms: Date.now() - t0,
         sample: String(content || '').slice(0, 30),
       });
@@ -490,6 +492,7 @@ async function handleApi(req, res, pathname, url) {
         ok: false,
         configured,
         model: getWorkingModel() || '',
+        attempts: getLastModelErrors(),
         ms: Date.now() - t0,
         error: err.message,
       });

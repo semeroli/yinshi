@@ -26,6 +26,7 @@ import {
   hasOnlineModel,
   hasSenseNova,
   getWorkingModel,
+  getLastModelErrors,
   STEP_TIMEOUT,
 } from '../lib/model.js';
 import { getStore, publicUser, publicPost } from '../lib/store.js';
@@ -493,11 +494,20 @@ export async function onRequest(context) {
           configured,
           channel,
           model: getWorkingModel() || '',
+          // 通了也要说"前面那几个为什么没成"：不然排行第一的坏模型会一直白占预算
+          attempts: getLastModelErrors(),
           ms: Date.now() - t0,
           sample: String(content || '').slice(0, 30),
         });
       } catch (err) {
-        return json({ ok: false, configured, model: getWorkingModel() || '', ms: Date.now() - t0, error: err.message });
+        return json({
+          ok: false,
+          configured,
+          model: getWorkingModel() || '',
+          attempts: getLastModelErrors(),
+          ms: Date.now() - t0,
+          error: err.message,
+        });
       }
     }
 
