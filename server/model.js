@@ -145,6 +145,43 @@ export function planTimeout(leftMs, index, remain) {
   return index === 0 ? Math.floor(leftMs * 0.5) : Math.floor(leftMs / remain);
 }
 
+/**
+ * 容量类错误：额度用尽 / 限流 / 欠费。这类错误**换一家就有救**，
+ * 和"超时"（换一家也来不及）不是一回事。
+ */
+function isCapacityError(msg) {
+  return /\b(429|402)\b|quota|rate[ -]?limit|exceeded your current|insufficient/i.test(String(msg || ''));
+}
+
+/** 上游 429 的正文是一大段 JSON，原样塞进错误串会把后面几家全挤掉，压成一句话 */
+function compactErr(raw) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (/quota|rate[ -]?limit|\b429\b/i.test(s)) return '额度用尽/被限流（429），换一家';
+  if (/\b402\b|insufficient|balance/i.test(s)) return '账户余额不足（402），换一家';
+  return s.slice(0, 90);
+}
+
+/** 被上游判了"额度/限流"的模型进冷却表，冷却期内不再排在最前面撞 */
+const modelCooldown = new Map();
+const COOLDOWN_MS = 10 * 60 * 1000;
+
+/**
+ * 候选顺序：**跑通过的排最前，但绝不排除其它家**。
+ *
+ * 🔴 这里原来是 `workingModel ? [workingModel] : 全量` —— 一旦某模型成功过，
+ *    候选就只剩它一个。于是它额度一满（429），整条链当场断掉，
+ *    另外两家从头到尾没被试过，错误串里也只留它一家。
+ *    记住"谁好用"是为了少走弯路，不是为了把自己钉死在一家上。
+ */
+function orderCandidates(preferred) {
+  const all = modelCandidates();
+  const now = Date.now();
+  const alive = all.filter((m) => (modelCooldown.get(m) || 0) <= now);
+  const pool = alive.length ? alive : all;
+  if (!preferred || !pool.includes(preferred)) return pool;
+  return [preferred, ...pool.filter((m) => m !== preferred)];
+}
+
 async function callModelScope(messages, { temperature, top_p, max_tokens, timeoutMs, json = false }, model) {
   const key = process.env.MODELSCOPE_API_KEY;
   if (!key) throw new Error('NO_MODELSCOPE_KEY');
@@ -156,7 +193,8 @@ async function callModelScope(messages, { temperature, top_p, max_tokens, timeou
     lastProbeAt = nowAt;
   }
 
-  const candidates = model ? [model] : workingModel ? [workingModel] : modelCandidates();
+  // model 参数是"指定必须用这一家"（测试/调试用）；否则跑通过的排最前、其余照试
+  const candidates = model ? [model] : orderCandidates(workingModel);
   const errors = [];
 
   // 按**剩余预算**动态分配：润色只有 18 秒，固定均分会让每个候选都短到来不及出字
@@ -193,19 +231,24 @@ async function callModelScope(messages, { temperature, top_p, max_tokens, timeou
       if (!content) throw new Error('模型返回为空');
       workingModel = name;
       modelScopeDownUntil = 0;
+      modelCooldown.delete(name);
       lastModelErrors = errors.slice();
       return content;
     } catch (err) {
       // "aborted" 对排查等于零信息，换成"超时 >x.x s 无响应"
-      const timedOut = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
-      errors.push(`${name}: ${timedOut ? `超时（>${(perTry / 1000).toFixed(1)}s 无响应）` : err.message}`);
-      if (workingModel) workingModel = '';
+      const raw = String(err?.message || '');
+      const timedOut = err?.name === 'AbortError' || /abort/i.test(raw);
+      const capacity = !timedOut && isCapacityError(raw);
+      // 额度用尽 / 限流：立刻换下一家，并让这家凉十分钟
+      if (capacity) modelCooldown.set(name, Date.now() + COOLDOWN_MS);
+      if (workingModel === name) workingModel = '';
+      errors.push(`${name}: ${timedOut ? `超时（>${(perTry / 1000).toFixed(1)}s 无响应）` : compactErr(raw)}`);
     }
   }
   modelScopeDownUntil = Date.now() + OUTAGE_MS;
   lastProbeAt = Date.now();
   lastModelErrors = errors.slice();
-  throw new Error(errors.join(' | ').slice(0, 400));
+  throw new Error(errors.join(' | ').slice(0, 600));
 }
 
 /** 是否配置了任意在线模型通道 */

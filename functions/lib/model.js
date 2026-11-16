@@ -164,6 +164,47 @@ export function planTimeout(leftMs, index, remain) {
   return index === 0 ? Math.floor(leftMs * 0.5) : Math.floor(leftMs / remain);
 }
 
+/**
+ * 容量类错误：额度用尽 / 限流 / 欠费。
+ * 这类错误**换一家就有救**，和"超时"（换一家也来不及）不是一回事。
+ */
+function isCapacityError(msg) {
+  return /\b(429|402)\b|quota|rate[ -]?limit|exceeded your current|insufficient/i.test(String(msg || ''));
+}
+
+/** 上游 429 的正文是一大段 JSON，原样塞进错误串会把后面几家全挤掉，压成一句话 */
+function compactErr(raw) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (/quota|rate[ -]?limit|\b429\b/i.test(s)) return '额度用尽/被限流（429），换一家';
+  if (/\b402\b|insufficient|balance/i.test(s)) return '账户余额不足（402），换一家';
+  return s.slice(0, 90);
+}
+
+/**
+ * 被上游判了"额度/限流"的模型进冷却表，冷却期内不再把它排在最前面撞。
+ * 没有这张表的话，GLM 额度用尽后每次请求都要先白等它一次（润色那步是整份预算）。
+ */
+const modelCooldown = new Map();
+const COOLDOWN_MS = 10 * 60 * 1000;
+
+/**
+ * 候选顺序：**跑通过的排最前，但绝不排除其它家**。
+ *
+ * 🔴 这里原来写的是 `workingModel ? [workingModel] : 全量` ——
+ *    一旦某个模型成功过，候选数组就只剩它一个。于是它额度一满（429），
+ *    整条链当场断掉，另外两家从头到尾没被试过，错误串里也只留它一家。
+ *    记录"谁好用"是为了少走弯路，不是为了把自己钉死在一家上。
+ */
+function orderCandidates(env, preferred) {
+  const all = modelCandidates(env);
+  const now = Date.now();
+  const alive = all.filter((m) => (modelCooldown.get(m) || 0) <= now);
+  // 全都在冷却就别干等，硬着头皮按原顺序全试一遍（额度可能已经恢复了）
+  const pool = alive.length ? alive : all;
+  if (!preferred || !pool.includes(preferred)) return pool;
+  return [preferred, ...pool.filter((m) => m !== preferred)];
+}
+
 async function callModelScope(env, messages, { temperature, top_p, max_tokens, timeoutMs, json = false }) {
   if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
   // 熔断期不再一刀切拒绝：每 30 秒放一个请求出去探路（半开）。
@@ -174,7 +215,8 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens, t
     lastProbeAt = nowAt;
   }
 
-  const candidates = workingModel ? [workingModel] : modelCandidates(env);
+  // 跑通过的那家排最前，但**不排除其它家**（见 orderCandidates 的注释）
+  const candidates = orderCandidates(env, workingModel);
   const errors = [];
 
   // 候选模型是串行试的，每家都吃满超时会把整步拖爆 ⇒ 按**剩余预算**动态分配。
@@ -213,21 +255,27 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens, t
       if (!content) throw new Error('模型返回为空');
       workingModel = name;
       modelScopeDownUntil = 0;
+      modelCooldown.delete(name); // 之前被限流、现在又能用了
       lastModelErrors = errors.slice(); // 之前那几个为什么没成，留着给自检看
       return content;
     } catch (err) {
       // "The operation was aborted" 对排查等于零信息：看不出是超时还是被网关掐了。
       // 换成"超时 >21.7s 无响应"，一眼能分辨"该加预算"还是"该换模型"。
-      const timedOut = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
-      errors.push(`${name}: ${timedOut ? `超时（>${(perTry / 1000).toFixed(1)}s 无响应）` : err.message}`);
-      if (workingModel) workingModel = '';
+      const raw = String(err?.message || '');
+      const timedOut = err?.name === 'AbortError' || /abort/i.test(raw);
+      const capacity = !timedOut && isCapacityError(raw);
+      // 额度用尽 / 限流：立刻换下一家，并让这家先凉十分钟 ——
+      // 否则接下来每个请求都要先撞它一次，白花掉整份预算。
+      if (capacity) modelCooldown.set(name, Date.now() + COOLDOWN_MS);
+      if (workingModel === name) workingModel = '';
+      errors.push(`${name}: ${timedOut ? `超时（>${(perTry / 1000).toFixed(1)}s 无响应）` : compactErr(raw)}`);
     }
   }
   // 全部候选失败：短时熔断，避免每次请求都白等四个候选串行超时
   modelScopeDownUntil = Date.now() + OUTAGE_MS;
   lastProbeAt = Date.now();
   lastModelErrors = errors.slice();
-  throw new Error(errors.join(' | ').slice(0, 400));
+  throw new Error(errors.join(' | ').slice(0, 600));
 }
 
 export function hasSenseNova(env) {

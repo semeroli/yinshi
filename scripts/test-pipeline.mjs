@@ -126,7 +126,22 @@ globalThis.fetch = async (input, init = {}) => {
   const sys = body.messages?.[0]?.content || '';
   const userMsg = body.messages?.[1]?.content || '';
   const kind = classify(sys);
-  calls.push({ kind, sys, userMsg });
+  // 记下这次打的是哪个模型：验证"一家 429 要换下一家"时全靠它
+  calls.push({ kind, sys, userMsg, model: body.model });
+
+  // 线上真实事故：GLM-5.2 额度用尽，上游回 429 + 一大段 JSON。
+  // 旧代码记住 GLM 之后候选数组只剩它一个 ⇒ 链当场断掉，另外两家没被试过。
+  if (mode === 'glm429' && String(body.model || '').includes('GLM')) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message:
+            'You exceeded your current quota, please check your plan and billing details. For details, see: https://help.aliyun.com/zh/model-studio/',
+        },
+      }),
+      { status: 429, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
 
   const content = produce(kind, userMsg); // 在 allDown 场景里会抛，正好模拟上游挂掉
   return new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }), {
@@ -203,7 +218,27 @@ const DESC = {
   fixFail: '小楼独坐，疏钟一声，桂子落满阶',
   allDown: '雨后空山，松间清泉，一个人走',
   refusal: '想你，秋天，一个人',
+  glm429: '春深小院，燕子双飞，独坐无事',
 };
+
+/* ===== 场景 0：首选模型额度用尽（429）→ 必须自动换下一家 =====
+   线上真实事故：GLM-5.2 回 429 "You exceeded your current quota"，
+   页面提示里只有它一家 —— 因为记住 workingModel 之后候选数组只剩它一个，
+   另外两家从头到尾没被试过。放在最前面跑，是因为此刻通道还没进熔断。 */
+console.log('\n[0] 首选模型 429 时必须换下一家，不能整条链断掉');
+mode = 'glm429';
+calls.length = 0;
+const t0 = await post('/api/theme', { description: DESC.glm429 });
+const triedModels = [...new Set(calls.map((c) => c.model))];
+ok(t0.status === 200, '接口没有报错');
+ok(String(triedModels[0] || '').includes('GLM'), '第一家仍然是记得住的那个（先试它没毛病）', String(triedModels[0]));
+ok(
+  triedModels.some((m) => !String(m).includes('GLM')),
+  '额度用尽后确实去试了别家',
+  `试过：${triedModels.join(' / ') || '（一次都没发出去）'}`,
+);
+ok(t0.body?.channel === 'modelscope', '最终换到了能用的模型', t0.body?.channel);
+ok(Boolean(t0.body?.theme?.theme?.length >= 20), '换家之后意境稿是真模型给的（不是本地模板）');
 
 /* ===== 场景 1：正常两步 ===== */
 console.log('\n[1] 两步生成（润色 → 成诗）');
