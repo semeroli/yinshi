@@ -312,13 +312,18 @@ export function composePoem(imagery, { form, style, strict = true, avoid = [] } 
   // 同体裁池被 avoid 清空时不硬撑，退回全体（但会带 formDowngraded 标记）
   const base = sameForm.length ? sameForm : usable.length ? usable : POEMS;
 
+  // 库存诗跟"用户要写的意象"对上了几个 —— 这个数字有两个用途：
+  // ① 打分（命中越多越优先）② 事后判断"这首到底搭不搭"。
+  const core = imagery.core_imagery || [];
+  const hitOf = (p) => p.imagery.filter((im) => core.some((c) => c.includes(im) || im.includes(c))).length;
+
   const scored = base.map((p) => {
     let score = 0;
     if (p.form === wantedForm) score += 5;
     if (p.style === wantedStyle) score += 3;
     if (imagery.season !== '不分季节' && p.season === imagery.season) score += 2;
     if (imagery.time !== '不明' && p.time === imagery.time) score += 1;
-    score += p.imagery.filter((im) => imagery.core_imagery.some((c) => c.includes(im) || im.includes(c))).length * 4;
+    score += hitOf(p) * 4;
     return { p, score };
   });
 
@@ -336,6 +341,9 @@ export function composePoem(imagery, { form, style, strict = true, avoid = [] } 
     mood: chosen.mood,
     imagery: [...chosen.imagery],
     paraphrase: [...chosen.paraphrase],
+    // 0 表示"这首库存诗跟用户要写的意象一个都没对上" —— 上层据此如实提示，
+    // 不能拿一首《塞上曲》去交"华山"的作业。
+    imageryHits: hitOf(chosen),
     self_check: {
       line_lengths_ok: chosen.lines.every((l) => l.length === needLen),
       // 演示语料已人工校韵，接入模型后以 ③ 程序校验为准

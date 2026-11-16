@@ -206,6 +206,22 @@ function progress(step) {
 
 /* ---------------- 渲染 ---------------- */
 
+/**
+ * 诗句的顿开位置（逗号插在第几个字后面）。
+ *
+ * 🔴 七言是 4+3，五言才是 2+3。这里原来写成 `line.length === 7 ? 2 : 2`——
+ *    三元两边一模一样，七言也被切成"2+5"，屏幕上就成了
+ *    「大漠，风高卷暮旌。」这种两字一顿的样子，看着像一阙词，
+ *    用户直接反馈"我选的是七言绝句，成了长短句"。
+ *    生成那边早修好了，显示这边一直没跟上。
+ */
+function verseCut(line) {
+  const n = String(line || '').length;
+  if (n === 7) return 4;
+  if (n === 5) return 2;
+  return n > 2 ? 2 : 0; // 字数不对时也别乱切，整句照原样显示
+}
+
 function renderImagery(list) {
   ui.imageryChips.innerHTML = '';
   list.forEach((word, i) => {
@@ -235,11 +251,11 @@ function renderPoem(data) {
   (poem.lines || []).forEach((line, i) => {
     const p = document.createElement('p');
     p.style.setProperty('--i', i);
-    const cut = line.length === 7 ? 2 : 2;
+    const cut = verseCut(line);
     const head = document.createTextNode(line.slice(0, cut));
     const punct1 = document.createElement('span');
     punct1.className = 'punct';
-    punct1.textContent = '，';
+    punct1.textContent = cut > 0 ? '，' : ''; // 字数异常（cut=0）时不硬插逗号
     const tailText = line.slice(cut);
     const tail = document.createElement('span');
     tail.textContent = tailText;
@@ -283,7 +299,12 @@ function renderPoem(data) {
   const demoTag = CHANNEL_LABEL[data.channel] || data.channel || '在线模型';
   const cacheTag = data.cached ? ' · 缓存命中' : '';
   ui.resultMeta.textContent = `${demoTag}${cacheTag}`;
-  if (data.fallback_reason) {
+  ui.resultMeta.classList.remove('is-warn');
+  if (data.demo_mismatch) {
+    // 掉到本地库存、且库存那首跟描述零关联 —— 别装作是给他写的
+    ui.resultMeta.textContent = '本地示例 · 与你的描述无关';
+    ui.resultMeta.classList.add('is-warn');
+  } else if (data.fallback_reason) {
     ui.resultMeta.textContent += ' · 模型未用上';
     ui.resultMeta.title = data.fallback_reason;
     console.warn('[fallback]', data.fallback_reason);
@@ -513,7 +534,8 @@ ui.btnSkipTheme.addEventListener('click', () => {
 
 function poemToText(poem) {
   const lines = (poem.lines || []).map((line) => {
-    const cut = line.length === 7 ? 2 : 2;
+    const cut = verseCut(line);
+    if (!cut) return `${line}。`;
     return `${line.slice(0, cut)}，${line.slice(cut)}。`;
   });
   return `《${poem.title || '无题'}》\n${lines.join('\n')}\n—— 诗境`;

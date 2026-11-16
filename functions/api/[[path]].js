@@ -211,7 +211,7 @@ async function runTheme(env, { description, form, style }) {
           { role: 'user', content: themeUser(description, form, style) },
         ],
         // 意境稿是 JSON（parseTheme 走 parseJson），所以这步必须带 response_format
-        { temperature: 0.7, top_p: 0.9, max_tokens: 700, timeoutMs: STEP_TIMEOUT.theme, json: true },
+        { temperature: 0.7, top_p: 0.9, max_tokens: 1000, timeoutMs: STEP_TIMEOUT.theme, json: true },
       );
       theme = parseTheme(content);
       channel = ch;
@@ -289,7 +289,11 @@ async function runPoem(env, { imagery, theme, form, style, strict, avoid }) {
             content: poemUser(imagery, { form: finalForm, style: finalStyle, strict, avoid, theme: themeText }),
           },
         ],
-        { temperature: 0.85, top_p: 0.9, max_tokens: 500, timeoutMs: STEP_TIMEOUT.poem },
+        // 🔴 max_tokens 不是"诗只有 28 字所以给 500 就够"：这一步要的是一整个 JSON
+        //    （标题 + 四句 + 韵脚 + 意象 + 四句白话释义 + 自检字段），
+        //    推理型模型的思考 token 也吃这份额度 ⇒ 500 常把 JSON 截断，
+        //    parseJson 解析失败 ⇒ 整首直接掉库存。给足，反正输出完就停。
+        { temperature: 0.85, top_p: 0.9, max_tokens: 1400, timeoutMs: STEP_TIMEOUT.poem },
       );
       poem = parsed;
       channel = ch;
@@ -389,6 +393,16 @@ async function runPoem(env, { imagery, theme, form, style, strict, avoid }) {
     theme: themeText,
     cached: false,
   };
+  // 🔴 掉到本地库存、而库存那首跟用户要写的意象一个都对不上时，必须说出来。
+  //    用户写"华山"，库存却给一首《塞上曲》（大漠孤城），
+  //    页面还不声不响地当成品呈上 —— 这比直接报错更伤人：会以为工具根本不懂他。
+  if (channel === 'demo' && poem.imageryHits === 0) {
+    result.demo_mismatch = true;
+    steps.push({
+      step: 'demo-mismatch',
+      note: '上面这首是本地示例诗，跟你的描述没有对应关系',
+    });
+  }
   if (fallbackReason) result.fallback_reason = fallbackReason;
   // 🔴 只缓存"模型写成 + 校验通过"的结果。
   //    缓存降级结果等于把一次偶发失败钉死 24 小时，用户怎么刷新都是同一首库存。

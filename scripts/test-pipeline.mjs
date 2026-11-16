@@ -397,6 +397,37 @@ console.log('\n[7] 候选超时预算分配');
   ok(planTimeout(60000, 0, 1) === 59700, '只剩一个候选时直接给满', `${planTimeout(60000, 0, 1)}ms`);
 }
 
+/* ===== 场景 8：掉库存时，库存诗跟描述零关联必须如实说 =====
+   线上真实事故：用户写"我最喜欢华山"，选七言绝句 + 豪放，模型那步没接上，
+   库存按"风格豪放 +3 分"挑了《塞上曲》（大漠风高卷暮旌），
+   页面却不声不响当成品呈上 ⇒ 用户以为工具根本不懂他。 */
+console.log('\n[8] 库存诗与描述不搭时必须挑明');
+mode = 'allDown';
+calls.length = 0;
+const p8 = await post('/api/poem', {
+  imagery: { core_imagery: ['削壁', '清溪', '荷叶', '粉荷', '小鱼小虾'], form_suggestion: '七言绝句' },
+  theme: '华山千仞，削壁如城。清溪绕石而下，山色如画。',
+  form: '七言绝句',
+  style: '豪放',
+  strict: true,
+});
+ok(p8.body?.channel === 'demo', '这种情况确实掉到本地库存', p8.body?.channel);
+ok(p8.body?.demo_mismatch === true, '标记为「与描述无关」', String(p8.body?.demo_mismatch));
+ok(
+  (p8.body?.pipeline || []).some((s) => s.step === 'demo-mismatch'),
+  '兜底轨迹里写明是本地示例',
+  (p8.body?.pipeline || []).map((s) => s.step).join(','),
+);
+// 反过来：意象能对上库存诗时，别乱报警
+const p8b = await post('/api/poem', {
+  imagery: { core_imagery: ['大漠', '长河', '孤城', '旌旗'], form_suggestion: '七言绝句' },
+  theme: '塞上黄昏，大漠风紧，孤城一角压着落日。',
+  form: '七言绝句',
+  style: '豪放',
+  strict: true,
+});
+ok(p8b.body?.demo_mismatch !== true, '意象能对上库存时不误报', String(p8b.body?.demo_mismatch));
+
 /* ---------------- 收尾 ---------------- */
 
 console.log(`\n${'='.repeat(52)}`);

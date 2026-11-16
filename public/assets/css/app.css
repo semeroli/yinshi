@@ -232,6 +232,11 @@
   color: var(--ink-4);
 }
 
+/* 掉到本地示例、且跟用户描述毫无关系时用朱砂色点出来，别让它看起来像成品 */
+.result-meta.is-warn {
+  color: var(--cinnabar);
+}
+
 /* 空状态 */
 .empty {
   flex: 1;
