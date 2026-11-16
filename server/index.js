@@ -516,7 +516,7 @@ async function handleApi(req, res, pathname, url) {
     try {
       const msgs = [{ role: 'user', content: '只回一个字：好' }];
       // 别用 max_tokens: 8 —— 推理型模型会把预算花在思考上，content 返回空，误判成"返回为空"
-      const params = { temperature: 0, max_tokens: 32, timeoutMs: 9000 };
+      const params = { temperature: 0, max_tokens: 256, timeoutMs: 9000 };
       const got = only
         ? { content: await chatVia(only, msgs, params), channel: only }
         : await chat(msgs, params);

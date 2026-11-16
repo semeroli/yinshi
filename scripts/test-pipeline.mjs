@@ -11,9 +11,10 @@ const realFetch = globalThis.fetch.bind(globalThis);
 
 process.env.PORT = process.env.YS_TEST_PORT || '5187';
 process.env.MODELSCOPE_API_KEY = 'test-key-not-real';
+// 商汤也配一个假 Key：它这一代全是推理型模型，"只有 reasoning 没有 content"是个必测的分支
+process.env.SENSENOVA_API_KEY = 'sk-test-not-real';
 delete process.env.LLM_BASE_URL;
 delete process.env.LLM_API_KEY;
-delete process.env.SENSENOVA_API_KEY;
 delete process.env.SENSENOVA_AK;
 delete process.env.TURNSTILE_SECRET;
 delete process.env.TURNSTILE_SITE_KEY;
@@ -120,14 +121,53 @@ function produce(kind, userMsg) {
 
 globalThis.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input?.url || String(input);
-  if (!url.includes('api-inference.modelscope.cn')) return realFetch(input, init);
+  if (!url.includes('api-inference.modelscope.cn') && !url.includes('token.sensenova.cn')) {
+    return realFetch(input, init);
+  }
 
   const body = JSON.parse(init.body || '{}');
   const sys = body.messages?.[0]?.content || '';
   const userMsg = body.messages?.[1]?.content || '';
   const kind = classify(sys);
   // 记下这次打的是哪个模型：验证"一家 429 要换下一家"时全靠它
-  calls.push({ kind, sys, userMsg, model: body.model });
+  calls.push({
+    kind,
+    sys,
+    userMsg,
+    model: body.model,
+    maxTokens: body.max_tokens,
+    thinking: body.thinking, // 验证有没有试着关掉思考
+    host: url.includes('sensenova') ? 'sensenova' : 'modelscope',
+  });
+
+  /* ---- 商汤 ---- */
+  if (url.includes('token.sensenova.cn')) {
+    if (mode === 'allDown') throw new Error('connect ECONNREFUSED 127.0.0.1:443');
+    // 线上原始响应：只有 reasoning、没有 content，finish_reason=length
+    if (mode === 'senseReasoning') {
+      return new Response(
+        JSON.stringify({
+          id: '8303f68c72954dc5b16bb59d46458ee3',
+          created: 1794807515,
+          model: body.model || 'sensenova-6.8-flash-lite',
+          object: 'chat.completion',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', reasoning: 'Thinking Process:\n\n1.  **Analyze the Request:** 用户只让回一个字' },
+              finish_reason: 'length',
+            },
+          ],
+          usage: { prompt_tokens: 96, completion_tokens: 32, total_tokens: 128 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return new Response(
+      JSON.stringify({ choices: [{ message: { role: 'assistant', content: '好' }, finish_reason: 'stop' }] }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
 
   // 线上真实事故：GLM-5.2 额度用尽，上游回 429 + 一大段 JSON。
   // 旧代码记住 GLM 之后候选数组只剩它一个 ⇒ 链当场断掉，另外两家没被试过。
@@ -258,6 +298,35 @@ ok(
   !JSON.stringify(st.body || {}).includes('test-key-not-real'),
   '响应里不会出现明文 Key',
 );
+
+/* ===== 场景 0c：商汤是推理型模型，「只有 reasoning 没有 content」要说清楚 =====
+   线上原始响应：{"choices":[{"message":{"reasoning":"Thinking Process:…"},
+                                "finish_reason":"length"}],"usage":{"completion_tokens":32}}
+   思考的 token 也算 max_tokens，32 个全被"想"吃光，content 一个字都没有。
+   以前报"商汤返回为空"，查了一圈 Key 和模型名 —— 现在必须点明是被思考截断。 */
+console.log('\n[0c] 商汤只有 reasoning 时要说明是被思考截断');
+mode = 'senseReasoning';
+calls.length = 0;
+const sr = await getJson('/api/ai-status?channel=sensenova');
+ok(sr.body?.configured?.sensenova === true, '商汤被认定为已配置');
+ok(sr.body?.ok === false, '这种响应不能算成功');
+ok(
+  /思考占满|finish_reason=length/.test(String(sr.body?.error || '')),
+  '报错点明是思考吃光了额度（不再是含糊的"返回为空"）',
+  String(sr.body?.error || '').slice(0, 70),
+);
+const senseCall = calls.find((c) => c.host === 'sensenova');
+ok(
+  Number(senseCall?.maxTokens) >= 1500,
+  '商汤的 max_tokens 被抬到 1500 以上（思考 token 也算在这里）',
+  String(senseCall?.maxTokens),
+);
+ok(senseCall?.thinking?.type === 'disabled', '尝试过带 thinking:disabled 关掉思考', JSON.stringify(senseCall?.thinking));
+
+// 反之：商汤正常出字时必须算成功
+mode = 'happy';
+const so = await getJson('/api/ai-status?channel=sensenova');
+ok(so.body?.ok === true && so.body?.channel === 'sensenova', '商汤正常时能拿到内容', String(so.body?.sample));
 
 /* ===== 场景 1：正常两步 ===== */
 console.log('\n[1] 两步生成（润色 → 成诗）');

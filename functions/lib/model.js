@@ -26,7 +26,14 @@ const DEFAULT_TIMEOUT_MS = 70000;
  */
 export const STEP_TIMEOUT = { theme: 22000, poem: 70000, fix: 18000 };
 
-/** 兼容不同厂商的返回结构（content / reasoning_content / text） */
+/**
+ * 兼容不同厂商的返回结构（content / reasoning_content / text）。
+ *
+ * ⚠️ 故意**不**把 `reasoning` 当内容：商汤 flash-lite 这一族的思考字段就叫 reasoning，
+ *    里面是"Thinking Process: 1. Analyze the Request…"这种草稿。
+ *    把它当诗交上去，用户会看到一段英文自言自语。
+ *    只有 reasoning、没有 content ＝ 模型想了没写，交给上层换一家。
+ */
 function pickContent(data) {
   const choice = data?.choices?.[0];
   return (
@@ -293,20 +300,70 @@ export function hasOnlineModel(env) {
  *    → https://token.sensenova.cn/v1/chat/completions
  * 2) SENSENOVA_AK + SENSENOVA_SK（旧版商汤大装置 console.sensecore.cn）
  *    → https://api.sensenova.cn/v1/llm/chat-completions（JWT 鉴权）
+ *
+ * 🔴 2026-11-16 实测（线上原始响应）：
+ *    {"choices":[{"message":{"role":"assistant","reasoning":"Thinking Process:…"},
+ *                 "finish_reason":"length"}],"usage":{"completion_tokens":32}}
+ *    ⇒ 商汤这一代全是**推理型模型**，先"想"再答，而**思考的 token 也算 max_tokens**。
+ *      只给 32 个 token，全被"想"吃光，`content` 一个字都没有，finish_reason 直接是 length。
+ *      我们却把它报成"商汤返回为空"，查了一圈 Key 和模型名。
+ *
+ *    另外它的思考字段叫 **reasoning**（flash-lite 这一族），
+ *    而 deepseek/glm/kimi 那几族叫 reasoning_content —— pickContent 两个都要认。
  */
+const SENSENOVA_DEFAULT_MODEL = 'sensenova-6.8-flash-lite';
+
+/**
+ * 推理型模型的思考 token 也占 max_tokens，调用方按"诗只有 28 字"给的额度必然不够。
+ * 这里兜一个下限，别让"还没开口就被截断"再发生一次。
+ */
+const SENSENOVA_MIN_TOKENS = 1500;
+
+/** 明确不吃 thinking 参数的模型（400 过就别再带了，省一次往返） */
+const noThinkingParam = new Set();
+
+/**
+ * 发一次商汤请求，并**尝试关掉思考**。
+ *
+ * 关思考能省掉大量思考 token、也快得多；但 thinking 字段各模型支持不一
+ * （官方文档写着对象形态，社区实测 flash-lite 没测成、字符串形态全线 400）。
+ * 所以这里的策略是"试一次，不认就记住，别每次都试"：
+ * 带 thinking 的请求若被 400 拒，就黑名单这个模型并立刻重发一次不带 thinking 的。
+ */
+async function sensePost(url, headers, payload, timeoutMs, model) {
+  if (noThinkingParam.has(model)) return postJson(url, headers, payload, timeoutMs);
+  try {
+    return await postJson(url, headers, { ...payload, thinking: { type: 'disabled' } }, timeoutMs);
+  } catch (err) {
+    if (!/HTTP 4\d\d/.test(String(err?.message || ''))) throw err;
+    noThinkingParam.add(model);
+    console.warn(`[sensenova] ${model} 不接受 thinking 参数，后续请求不再带`);
+    return postJson(url, headers, payload, timeoutMs);
+  }
+}
+
+/** 空返回时把"为什么空"说清楚：是被思考吃光了，还是结构不对 */
+function senseEmptyReason(data, model, budget) {
+  const choice = data?.choices?.[0] || data?.data?.choices?.[0];
+  const finish = choice?.finish_reason || '未知';
+  const msg = choice?.message || {};
+  const thinkLen = String(msg.reasoning || msg.reasoning_content || '').length;
+  if (finish === 'length') {
+    return `商汤返回为空：模型的思考占满了 max_tokens（${budget}），还没开始写就被截断（finish_reason=length，思考 ${thinkLen} 字）。模型 ${model}`;
+  }
+  return `商汤返回为空（模型 ${model}，finish_reason=${finish}，思考 ${thinkLen} 字）：${JSON.stringify(data).slice(0, 400)}`;
+}
+
 async function callSenseNova(env, messages, { temperature, top_p, max_tokens, timeoutMs, json = false }) {
   const apiKey = env.SENSENOVA_API_KEY;
 
   // 新版：单 Key
   if (apiKey) {
     const base = String(env.SENSENOVA_BASE_URL || 'https://token.sensenova.cn/v1').replace(/\/+$/, '');
-    const payload = {
-      model: env.SENSENOVA_MODEL || 'sensenova-6.8-flash-lite',
-      messages,
-      temperature,
-      top_p,
-      max_tokens,
-    };
+    const model = env.SENSENOVA_MODEL || SENSENOVA_DEFAULT_MODEL;
+    // 思考 token 也算在这里面，所以取调用方给的值与下限的较大者
+    const budget = Math.max(Number(max_tokens) || 0, SENSENOVA_MIN_TOKENS);
+    const payload = { model, messages, temperature, top_p, max_tokens: budget };
     const url = `${base}/chat/completions`;
     const headers = { Authorization: `Bearer ${apiKey}` };
 
@@ -316,9 +373,9 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens, ti
     let firstHint = '';
     if (json) {
       try {
-        const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs);
+        const data = await sensePost(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs, model);
         content = pickContent(data);
-        if (!content) firstHint = `带 response_format 时 200 但内容为空：${JSON.stringify(data).slice(0, 160)}`;
+        if (!content) firstHint = `带 response_format 时：${senseEmptyReason(data, model, budget)}`;
       } catch (err) {
         // 🔴 以前这里把异常静默吞了，结果外界只看到"商汤返回为空"，
         //    401 / 404 / 模型名错全都查不出来。记下来，报错时要带上。
@@ -327,15 +384,12 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens, ti
       }
     }
     if (!content) {
-      const data = await postJson(url, headers, payload, timeoutMs);
+      const data = await sensePost(url, headers, payload, timeoutMs, model);
       content = pickContent(data);
       if (!content) {
-        throw new Error(
-          `商汤返回为空（模型 ${payload.model}）。纯文本请求 200 但无内容：${JSON.stringify(data).slice(0, 400)}｜${firstHint || '未带 response_format'}`,
-        );
+        throw new Error(`${senseEmptyReason(data, model, budget)}${firstHint ? `｜${firstHint}` : ''}`);
       }
     }
-    if (!content) throw new Error('商汤返回为空');
     return content;
   }
 

@@ -536,7 +536,7 @@ export async function onRequest(context) {
         const msgs = [{ role: 'user', content: '只回一个字：好' }];
         // ⚠️ 别用 max_tokens: 8 —— 推理型模型会把预算全花在思考上，content 返回空，
         //    于是"能用"被误判成"返回为空"，白白去查一圈 Key
-        const params = { temperature: 0, max_tokens: 32, timeoutMs: 9000 };
+        const params = { temperature: 0, max_tokens: 256, timeoutMs: 9000 };
         const got = only
           ? { content: await chatVia(env, only, msgs, params), channel: only }
           : await chat(env, msgs, params);
