@@ -210,7 +210,8 @@ async function runTheme(env, { description, form, style }) {
           { role: 'system', content: THEME_SYSTEM },
           { role: 'user', content: themeUser(description, form, style) },
         ],
-        { temperature: 0.7, top_p: 0.9, max_tokens: 700, timeoutMs: STEP_TIMEOUT.theme },
+        // 意境稿是 JSON（parseTheme 走 parseJson），所以这步必须带 response_format
+        { temperature: 0.7, top_p: 0.9, max_tokens: 700, timeoutMs: STEP_TIMEOUT.theme, json: true },
       );
       theme = parseTheme(content);
       channel = ch;
@@ -246,6 +247,7 @@ async function repairLines(env, poem, form, issues, bad, round) {
         top_p: 0.7,
         max_tokens: 400,
         timeoutMs: STEP_TIMEOUT.fix,
+        json: true, // 返回 {"lines":[...]}，同样要 response_format
       },
     );
     const fixed = parseJson(content);

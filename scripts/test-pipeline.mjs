@@ -371,6 +371,32 @@ ok(
 );
 ok(p6b.body?.validation?.ok === true, '五言这版校验通过');
 
+/* ---------------- [7] 超时预算怎么分（模型全都不通的真凶） ---------------- */
+
+// 润色那步 22 秒、3 个候选。如果按"第一家一半"分，就是 9s/4.5s/4.5s，
+// 先想后吐字的模型一个字都来不及出 —— 线上就是三连 aborted。这里把策略锁死。
+console.log('\n[7] 候选超时预算分配');
+{
+  const { planTimeout } = await import('../server/model.js');
+
+  const themeBudget = 22000;
+  const first = planTimeout(themeBudget, 0, 3);
+  ok(first > 20000, '润色：第一家拿到几乎全部预算（不摊薄）', `${first}ms / 共 ${themeBudget}ms`);
+  ok(first <= themeBudget, '润色：不会超过总预算', `${first}ms`);
+
+  const poemBudget = 70000;
+  const poemFirst = planTimeout(poemBudget, 0, 3);
+  const poemSecond = planTimeout(poemBudget - poemFirst, 1, 2);
+  ok(
+    poemFirst > 25000 && poemFirst < 40000,
+    '成诗：预算宽裕时第一家只拿一半（留出对冲）',
+    `${poemFirst}ms / 共 ${poemBudget}ms`,
+  );
+  ok(poemSecond > 10000, '成诗：第二家仍拿得到够写的时间', `${poemSecond}ms`);
+  ok(planTimeout(8000, 0, 3) > 6000, '预算极紧时也是整份给一家', `${planTimeout(8000, 0, 3)}ms`);
+  ok(planTimeout(60000, 0, 1) === 59700, '只剩一个候选时直接给满', `${planTimeout(60000, 0, 1)}ms`);
+}
+
 /* ---------------- 收尾 ---------------- */
 
 console.log(`\n${'='.repeat(52)}`);

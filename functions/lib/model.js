@@ -19,7 +19,12 @@ export {
 
 /** 单次调用的默认上限。成诗慢，润色/校对快，调用方可按步骤覆盖。 */
 const DEFAULT_TIMEOUT_MS = 70000;
-export const STEP_TIMEOUT = { theme: 18000, poem: 70000, fix: 18000 };
+/**
+ * 🔴 润色那步给 22 秒，不是 18 秒：GLM-5.2 / Qwen3.8 这类模型会先"想"再吐字，
+ *    60~110 字的意境稿 + 一整个 JSON 对象，18 秒里分给三家候选（9s/4.5s/4.5s）
+ *    谁都不够，线上实测就是三连 aborted。宁可选一个给足时间，也别三家都瘸着跑。
+ */
+export const STEP_TIMEOUT = { theme: 22000, poem: 70000, fix: 18000 };
 
 /** 兼容不同厂商的返回结构（content / reasoning_content / text） */
 function pickContent(data) {
@@ -67,7 +72,7 @@ async function postJson(url, headers, body, timeoutMs = DEFAULT_TIMEOUT_MS) {
  * 通用 OpenAI 兼容通道（DeepSeek / 智谱 / 通义 / OpenAI / 自建网关均可）
  * 只需配置 LLM_BASE_URL、LLM_API_KEY，模型名用 LLM_MODEL
  */
-async function callOpenAICompatible(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
+async function callOpenAICompatible(env, messages, { temperature, top_p, max_tokens, timeoutMs, json = false }) {
   const base = String(env.LLM_BASE_URL || '').replace(/\/+$/, '');
   if (!base) throw new Error('NO_LLM_BASE_URL');
 
@@ -80,7 +85,10 @@ async function callOpenAICompatible(env, messages, { temperature, top_p, max_tok
       temperature,
       top_p,
       max_tokens,
-      response_format: { type: 'json_object' },
+      // ⚠️ 只有真的要结构化输出时才加：润色那一步要的是一段中文散文，
+      //    强加 json_object 既让模型把稿子包进 JSON，也拖慢生成，
+      //    还有一批模型/网关直接 400（DeepSeek 实测就报 400）
+      ...(json ? { response_format: { type: 'json_object' } } : {}),
     },
     timeoutMs,
   );
@@ -138,7 +146,25 @@ function modelCandidates(env) {
   return [...new Set([...configured, ...DEFAULT_MODELS])];
 }
 
-async function callModelScope(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
+/**
+ * 候选串行试时的单次超时怎么分。
+ *
+ * 🔴 这是「模型全都不通」的真凶，别再改回去：
+ *    润色那步总预算只有 22 秒，候选 3 个。以前是「第一家拿一半、其余平分」，
+ *    也就是 9s / 4.5s / 4.5s —— GLM-5.2、Qwen3.8 这类先想后吐字的模型
+ *    一个字都来不及出来，三连 `aborted`，整站退回本地模板。
+ *
+ * 现在的规矩：**预算紧就不分**，整份给当前这家跑到出字为止；
+ * 预算宽（成诗 70 秒）才对冲 —— 那时候平分也够写完，多试几家才划算。
+ * 对冲真正的用武之地是「第一家快速失败」（HTTP 4xx/空返回，1~2 秒），
+ * 这种情况剩下的时间会自然留给后面的候选。
+ */
+export function planTimeout(leftMs, index, remain) {
+  if (leftMs <= 30000 || remain <= 1) return leftMs - 300;
+  return index === 0 ? Math.floor(leftMs * 0.5) : Math.floor(leftMs / remain);
+}
+
+async function callModelScope(env, messages, { temperature, top_p, max_tokens, timeoutMs, json = false }) {
   if (!env.MODELSCOPE_API_KEY) throw new Error('NO_MODELSCOPE_KEY');
   // 熔断期不再一刀切拒绝：每 30 秒放一个请求出去探路（半开）。
   // 否则一次偶发超时会把接下来十分钟的请求全部按死在本地库存上。
@@ -165,9 +191,8 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens, t
       break;
     }
     const remain = candidates.length - i;
-    // 第一家给一半预算：命中的大概率是第一个，别让它跟备胎平分到谁都写不完
-    const share = i === 0 && remain > 1 ? Math.floor(left * 0.5) : Math.floor(left / remain);
-    const perTry = Math.max(2500, Math.min(left - 300, share));
+    // 分配策略见上面的 planTimeout（那是本文件最容易改坏的一段）
+    const perTry = Math.max(2500, Math.min(left - 300, planTimeout(left, i, remain)));
 
     try {
       const data = await postJson(
@@ -179,7 +204,8 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens, t
           temperature,
           top_p,
           max_tokens,
-          response_format: { type: 'json_object' },
+          // 同上：只要 JSON 的步骤才加，润色走纯文本
+          ...(json ? { response_format: { type: 'json_object' } } : {}),
         },
         perTry,
       );
@@ -190,7 +216,10 @@ async function callModelScope(env, messages, { temperature, top_p, max_tokens, t
       lastModelErrors = errors.slice(); // 之前那几个为什么没成，留着给自检看
       return content;
     } catch (err) {
-      errors.push(`${name}: ${err.message}`);
+      // "The operation was aborted" 对排查等于零信息：看不出是超时还是被网关掐了。
+      // 换成"超时 >21.7s 无响应"，一眼能分辨"该加预算"还是"该换模型"。
+      const timedOut = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
+      errors.push(`${name}: ${timedOut ? `超时（>${(perTry / 1000).toFixed(1)}s 无响应）` : err.message}`);
       if (workingModel) workingModel = '';
     }
   }
@@ -217,7 +246,7 @@ export function hasOnlineModel(env) {
  * 2) SENSENOVA_AK + SENSENOVA_SK（旧版商汤大装置 console.sensecore.cn）
  *    → https://api.sensenova.cn/v1/llm/chat-completions（JWT 鉴权）
  */
-async function callSenseNova(env, messages, { temperature, top_p, max_tokens, timeoutMs }) {
+async function callSenseNova(env, messages, { temperature, top_p, max_tokens, timeoutMs, json = false }) {
   const apiKey = env.SENSENOVA_API_KEY;
 
   // 新版：单 Key
@@ -233,18 +262,21 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens, ti
     const url = `${base}/chat/completions`;
     const headers = { Authorization: `Bearer ${apiKey}` };
 
-    // response_format 在部分模型上会返回空内容，空则退回纯文本再试一次
+    // 只有要结构化输出时才先试 response_format；
+    // 不要 JSON 的步骤（润色）直接一次纯文本请求 —— 商汤对 response_format 的支持本来就不稳
     let content = '';
     let firstHint = '';
-    try {
-      const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs);
-      content = pickContent(data);
-      if (!content) firstHint = `带 response_format 时 200 但内容为空：${JSON.stringify(data).slice(0, 160)}`;
-    } catch (err) {
-      // 🔴 以前这里把异常静默吞了，结果外界只看到"商汤返回为空"，
-      //    401 / 404 / 模型名错全都查不出来。记下来，报错时要带上。
-      firstHint = `带 response_format 失败：${err.message}`;
-      content = '';
+    if (json) {
+      try {
+        const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs);
+        content = pickContent(data);
+        if (!content) firstHint = `带 response_format 时 200 但内容为空：${JSON.stringify(data).slice(0, 160)}`;
+      } catch (err) {
+        // 🔴 以前这里把异常静默吞了，结果外界只看到"商汤返回为空"，
+        //    401 / 404 / 模型名错全都查不出来。记下来，报错时要带上。
+        firstHint = `带 response_format 失败：${err.message}`;
+        content = '';
+      }
     }
     if (!content) {
       const data = await postJson(url, headers, payload, timeoutMs);
@@ -254,7 +286,7 @@ async function callSenseNova(env, messages, { temperature, top_p, max_tokens, ti
           `商汤返回为空（模型 ${payload.model}）。纯文本请求 200 但无内容：${JSON.stringify(data).slice(
             0,
             150,
-          )}｜${firstHint}`,
+          )}｜${firstHint || '未带 response_format'}`,
         );
       }
     }
@@ -325,7 +357,8 @@ export async function chat(env, messages, params) {
 
 /** 结构化输出：解析失败时补一句硬约束重试一次 */
 export async function chatJson(env, messages, params) {
-  const first = await chat(env, messages, params);
+  // json: true 才会带 response_format，普通 chat() 不带
+  const first = await chat(env, messages, { ...params, json: true });
   try {
     return { ...first, data: parseJson(first.content) };
   } catch (err) {
@@ -338,7 +371,7 @@ export async function chatJson(env, messages, params) {
           content: '请只输出一个 JSON 对象，第一个字符必须是 {，不要任何解释，不要 Markdown 代码围栏。',
         },
       ],
-      { ...params, temperature: 0.1 },
+      { ...params, json: true, temperature: 0.1 },
     );
     return { ...retry, data: parseJson(retry.content) };
   }
