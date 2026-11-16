@@ -23,6 +23,7 @@ import {
   parseTheme,
   chat,
   chatJson,
+  chatVia,
   hasOnlineModel,
   hasSenseNova,
   getWorkingModel,
@@ -42,6 +43,21 @@ import {
 /* ---------------- 工具 ---------------- */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
+
+/**
+ * Key 的指纹（sha256 前 8 位）。
+ * 用它判断"换了 Key 之后到底生效没有"——换了但忘了重新部署，指纹不会变。
+ * 只回指纹不回 Key 本身，不会把密钥漏进页面或日志。
+ */
+async function fingerprint(value) {
+  const s = String(value || '');
+  if (!s) return '';
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)]
+    .slice(0, 4)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
@@ -479,8 +495,13 @@ export async function onRequest(context) {
     /*
      * 模型自检：不写诗也能问「上游到底通不通」。
      * 页面右上角那个「模型在线」只说明**配了 Key**，不等于**调得通** ——
-     * 这里真发一次最小请求（8 token），失败时把三家各自的错因原样带回来。
-     * 用的是和写诗完全同一份 chat()，不是另抄一套探测逻辑。
+     * 这里真发一次最小请求，失败时把三家各自的错因原样带回来。
+     *
+     * ?channel=sensenova|modelscope|llm  只打这一家（不走自动降级）。
+     * 三家都不通的时候，这是唯一能把"到底谁坏"逐家问清的办法。
+     *
+     * keys 里回的是 Key 的**指纹**（sha256 前 8 位），不是 Key 本身。
+     * 换了 Key 但忘了重新部署时，指纹不会变 —— 一眼看得出来。
      */
     if (pathname === '/api/ai-status') {
       const user = await currentUser(request, env, store);
@@ -496,29 +517,44 @@ export async function onRequest(context) {
       if (isDemo(env)) {
         return json({ ok: false, configured, demo: true, error: '一个模型 Key 都没配，当前是演示模式' });
       }
+
+      const prefer = String(env.MODEL_PREFER || '').trim().toLowerCase();
+      const only = String(url.searchParams.get('channel') || '').trim().toLowerCase();
+      const base = {
+        configured,
+        prefer: prefer || '(默认 llm→魔搭→商汤)',
+        // 只回指纹，不回 Key 本身：既够判断"换没换"，又不会把密钥漏进日志
+        keys: {
+          sensenova: await fingerprint(env.SENSENOVA_API_KEY || (env.SENSENOVA_AK ? `aksk:${env.SENSENOVA_AK}` : '')),
+          modelscope: await fingerprint(env.MODELSCOPE_API_KEY),
+        },
+        sensenova_model: String(env.SENSENOVA_MODEL || 'sensenova-6.8-flash-lite'),
+      };
+
       const t0 = Date.now();
       try {
-        const { channel, content } = await chat(
-          env,
-          [{ role: 'user', content: '只回一个字：好' }],
-          // ⚠️ 别用 max_tokens: 8 —— 推理型模型会把预算全花在思考上，content 返回空，
-          //    于是"能用"被误判成"返回为空"，白白去查一圈 Key
-          { temperature: 0, max_tokens: 32, timeoutMs: 9000 },
-        );
+        const msgs = [{ role: 'user', content: '只回一个字：好' }];
+        // ⚠️ 别用 max_tokens: 8 —— 推理型模型会把预算全花在思考上，content 返回空，
+        //    于是"能用"被误判成"返回为空"，白白去查一圈 Key
+        const params = { temperature: 0, max_tokens: 32, timeoutMs: 9000 };
+        const got = only
+          ? { content: await chatVia(env, only, msgs, params), channel: only }
+          : await chat(env, msgs, params);
         return json({
           ok: true,
-          configured,
-          channel,
+          ...base,
+          channel: got.channel,
           model: getWorkingModel() || '',
           // 通了也要说"前面那几个为什么没成"：不然排行第一的坏模型会一直白占预算
           attempts: getLastModelErrors(),
           ms: Date.now() - t0,
-          sample: String(content || '').slice(0, 30),
+          sample: String(got.content || '').slice(0, 30),
         });
       } catch (err) {
         return json({
           ok: false,
-          configured,
+          ...base,
+          channel: only || '',
           model: getWorkingModel() || '',
           attempts: getLastModelErrors(),
           ms: Date.now() - t0,

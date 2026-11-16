@@ -307,10 +307,7 @@ async function callSenseNova(messages, { temperature, top_p, max_tokens, timeout
       content = pickContent(data);
       if (!content) {
         throw new Error(
-          `商汤返回为空（模型 ${payload.model}）。纯文本请求 200 但无内容：${JSON.stringify(data).slice(
-            0,
-            150,
-          )}｜${firstHint || '未带 response_format'}`,
+          `商汤返回为空（模型 ${payload.model}）。纯文本请求 200 但无内容：${JSON.stringify(data).slice(0, 400)}｜${firstHint || '未带 response_format'}`,
         );
       }
     }
@@ -347,32 +344,45 @@ async function callSenseNova(messages, { temperature, top_p, max_tokens, timeout
   return content;
 }
 
-/** 统一入口，返回 { content, channel } */
+/** 只打某一家，不参与自动降级（自检用）。错误原样上抛。 */
+export async function chatVia(channel, messages, params, model) {
+  if (channel === 'llm') {
+    if (!(process.env.LLM_BASE_URL && process.env.LLM_API_KEY)) throw new Error('未配置 LLM_BASE_URL / LLM_API_KEY');
+    return callOpenAICompatible(messages, params);
+  }
+  if (channel === 'modelscope') {
+    if (!process.env.MODELSCOPE_API_KEY) throw new Error('未配置 MODELSCOPE_API_KEY');
+    return callModelScope(messages, params, model);
+  }
+  if (channel === 'sensenova') {
+    if (!hasSenseNova()) throw new Error('未配置商汤 Key');
+    return callSenseNova(messages, params);
+  }
+  throw new Error(`未知通道：${channel}`);
+}
+
+/**
+ * 统一入口，返回 { content, channel }
+ * 默认 llm → 魔搭 → 商汤；MODEL_PREFER 可钉住某一家打头。
+ */
 export async function chat(messages, params, model) {
   const errors = [];
+  const prefer = String(process.env.MODEL_PREFER || '').trim().toLowerCase();
+  const order =
+    prefer === 'sensenova'
+      ? ['sensenova', 'modelscope', 'llm']
+      : prefer === 'modelscope'
+        ? ['modelscope', 'sensenova', 'llm']
+        : ['llm', 'modelscope', 'sensenova'];
 
-  if (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) {
+  for (const ch of order) {
+    if (ch === 'llm' && !(process.env.LLM_BASE_URL && process.env.LLM_API_KEY)) continue;
+    if (ch === 'modelscope' && !process.env.MODELSCOPE_API_KEY) continue;
+    if (ch === 'sensenova' && !hasSenseNova()) continue;
     try {
-      return { content: await callOpenAICompatible(messages, params), channel: 'llm' };
+      return { content: await chatVia(ch, messages, params, model), channel: ch };
     } catch (err) {
-      errors.push(`llm: ${err.message}`);
-    }
-  }
-
-  if (process.env.MODELSCOPE_API_KEY) {
-    try {
-      return { content: await callModelScope(messages, params, model), channel: 'modelscope' };
-    } catch (err) {
-      errors.push(`modelscope: ${err.message}`);
-    }
-  }
-
-  if (hasSenseNova()) {
-    try {
-      const content = await callSenseNova(messages, params);
-      return { content, channel: 'sensenova' };
-    } catch (err) {
-      errors.push(`sensenova: ${err.message}`);
+      errors.push(`${ch}: ${err.message}`);
     }
   }
 

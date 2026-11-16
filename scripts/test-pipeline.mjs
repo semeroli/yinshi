@@ -208,6 +208,12 @@ async function post(path, payload) {
   return { status: r.status, body };
 }
 
+async function getJson(path) {
+  const r = await realFetch(`${BASE}${path}`, { headers: { Cookie: COOKIE } });
+  const body = await r.json().catch(() => ({}));
+  return { status: r.status, body };
+}
+
 function only(kind) {
   return calls.filter((c) => c.kind === kind);
 }
@@ -239,6 +245,19 @@ ok(
 );
 ok(t0.body?.channel === 'modelscope', '最终换到了能用的模型', t0.body?.channel);
 ok(Boolean(t0.body?.theme?.theme?.length >= 20), '换家之后意境稿是真模型给的（不是本地模板）');
+
+/* ===== 场景 0b：自检可以点名某一家，并回报 Key 指纹 =====
+   三家都不通时要能逐家问"到底谁坏"；换 Key 之后要能看出"生效没有"。 */
+console.log('\n[0b] 自检支持 ?channel= 与 Key 指纹');
+const st = await getJson('/api/ai-status?channel=modelscope');
+ok(st.status === 200, '自检接口 200', `status=${st.status}`);
+ok(st.body?.ok === true, '点名 modelscope 这一家能通', JSON.stringify(st.body).slice(0, 100));
+ok(st.body?.channel === 'modelscope', '回的就是点名的那一家', st.body?.channel);
+ok(/^[0-9a-f]{8}$/.test(String(st.body?.keys?.modelscope || '')), 'Key 指纹是 8 位十六进制');
+ok(
+  !JSON.stringify(st.body || {}).includes('test-key-not-real'),
+  '响应里不会出现明文 Key',
+);
 
 /* ===== 场景 1：正常两步 ===== */
 console.log('\n[1] 两步生成（润色 → 成诗）');

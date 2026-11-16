@@ -13,6 +13,7 @@
  */
 import http from 'node:http';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -35,6 +36,7 @@ import {
   parseJson,
   parseTheme,
   chat,
+  chatVia,
   chatJson,
   hasOnlineModel,
   hasSenseNova,
@@ -132,6 +134,16 @@ const MIME = {
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
 };
+
+/**
+ * Key 的指纹（sha256 前 8 位）。
+ * 用来判断"换了 Key 生效没有"；只回指纹不回 Key，不会把密钥漏出去。
+ */
+function fingerprint(value) {
+  const s = String(value || '');
+  if (!s) return '';
+  return createHash('sha256').update(s).digest('hex').slice(0, 8);
+}
 
 function send(res, status, data, headers = {}) {
   const body = typeof data === 'string' ? data : JSON.stringify(data);
@@ -486,26 +498,42 @@ async function handleApi(req, res, pathname, url) {
     if (DEMO_MODE) {
       return send(res, 200, { ok: false, configured, demo: true, error: '一个模型 Key 都没配，当前是演示模式' });
     }
+    const prefer = String(process.env.MODEL_PREFER || '').trim().toLowerCase();
+    const only = String(url.searchParams.get('channel') || '').trim().toLowerCase();
+    const base = {
+      configured,
+      prefer: prefer || '(默认 llm→魔搭→商汤)',
+      // 只回指纹，不回 Key 本身：够判断"换没换"，又不会把密钥漏出去
+      keys: {
+        sensenova: fingerprint(
+          process.env.SENSENOVA_API_KEY || (process.env.SENSENOVA_AK ? `aksk:${process.env.SENSENOVA_AK}` : ''),
+        ),
+        modelscope: fingerprint(process.env.MODELSCOPE_API_KEY),
+      },
+      sensenova_model: String(process.env.SENSENOVA_MODEL || 'sensenova-6.8-flash-lite'),
+    };
     const t0 = Date.now();
     try {
-      const { channel, content } = await chat(
-        [{ role: 'user', content: '只回一个字：好' }],
-        // 别用 max_tokens: 8 —— 推理型模型会把预算花在思考上，content 返回空，误判成"返回为空"
-        { temperature: 0, max_tokens: 32, timeoutMs: 9000 },
-      );
+      const msgs = [{ role: 'user', content: '只回一个字：好' }];
+      // 别用 max_tokens: 8 —— 推理型模型会把预算花在思考上，content 返回空，误判成"返回为空"
+      const params = { temperature: 0, max_tokens: 32, timeoutMs: 9000 };
+      const got = only
+        ? { content: await chatVia(only, msgs, params), channel: only }
+        : await chat(msgs, params);
       return send(res, 200, {
         ok: true,
-        configured,
-        channel,
+        ...base,
+        channel: got.channel,
         model: getWorkingModel() || '',
         attempts: getLastModelErrors(),
         ms: Date.now() - t0,
-        sample: String(content || '').slice(0, 30),
+        sample: String(got.content || '').slice(0, 30),
       });
     } catch (err) {
       return send(res, 200, {
         ok: false,
-        configured,
+        ...base,
+        channel: only || '',
         model: getWorkingModel() || '',
         attempts: getLastModelErrors(),
         ms: Date.now() - t0,
