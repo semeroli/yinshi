@@ -24,6 +24,7 @@ import {
   chat,
   chatJson,
   hasOnlineModel,
+  hasSenseNova,
   STEP_TIMEOUT,
 } from '../lib/model.js';
 import { getStore, publicUser, publicPost } from '../lib/store.js';
@@ -455,6 +456,45 @@ export async function onRequest(context) {
     if (pathname === '/api/auth/me') {
       const user = await currentUser(request, env, store);
       return json({ user: publicUser(user) });
+    }
+
+    /*
+     * 模型自检：不写诗也能问「上游到底通不通」。
+     * 页面右上角那个「模型在线」只说明**配了 Key**，不等于**调得通** ——
+     * 这里真发一次最小请求（8 token），失败时把三家各自的错因原样带回来。
+     * 用的是和写诗完全同一份 chat()，不是另抄一套探测逻辑。
+     */
+    if (pathname === '/api/ai-status') {
+      const user = await currentUser(request, env, store);
+      if (!user) return json({ error: '请先登录' }, 401);
+      if (!rateLimit(`ai-status:${ip}`, 6, 10 * 60 * 1000)) {
+        return json({ error: '查得太频繁了，10 分钟后再试' }, 429);
+      }
+      const configured = {
+        llm: Boolean(env.LLM_BASE_URL && env.LLM_API_KEY),
+        modelscope: Boolean(env.MODELSCOPE_API_KEY),
+        sensenova: hasSenseNova(env),
+      };
+      if (isDemo(env)) {
+        return json({ ok: false, configured, demo: true, error: '一个模型 Key 都没配，当前是演示模式' });
+      }
+      const t0 = Date.now();
+      try {
+        const { channel, content } = await chat(
+          env,
+          [{ role: 'user', content: '只回一个字：好' }],
+          { temperature: 0, max_tokens: 8, timeoutMs: 9000 },
+        );
+        return json({
+          ok: true,
+          configured,
+          channel,
+          ms: Date.now() - t0,
+          sample: String(content || '').slice(0, 20),
+        });
+      } catch (err) {
+        return json({ ok: false, configured, ms: Date.now() - t0, error: err.message });
+      }
     }
 
     if (pathname === '/api/auth/register' && method === 'POST') {

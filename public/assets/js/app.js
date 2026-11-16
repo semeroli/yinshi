@@ -24,6 +24,7 @@ const ui = {
   themeText: el('theme-text'),
   themeChips: el('theme-chips'),
   themeSource: el('theme-source'),
+  themeWhy: el('theme-why'),
   themeError: el('theme-error'),
   btnCompose: el('btn-compose'),
   btnRepolish: el('btn-repolish'),
@@ -374,7 +375,7 @@ async function polish() {
       form_suggestion: res.theme.form_suggestion,
       style_suggestion: res.theme.style_suggestion,
     };
-    renderTheme(res.theme, res.channel);
+    renderTheme(res.theme, res.channel, res.fallback_reason);
     progress(2);
     show('theme');
   } catch (err) {
@@ -386,11 +387,21 @@ async function polish() {
   }
 }
 
-function renderTheme(theme, channel) {
+function renderTheme(theme, channel, reason) {
   ui.themeText.value = theme.theme || '';
   ui.themeSource.textContent =
     channel === 'local' ? '本地模板（模型暂不可用，可直接改）' : '由你的原话润色而来';
   ui.themeSource.dataset.channel = channel;
+
+  // 模型没接上时把真实原因摊开写：光说"暂不可用"，用户没法反馈也没法判断要不要等
+  const why = String(reason || '').trim();
+  if (channel === 'local' && why) {
+    ui.themeWhy.textContent = `模型这次没接上（${why.slice(0, 160)}）。这份稿子是本地模板补的，可以直接改，也可以点「重写一版」再试一次。`;
+    ui.themeWhy.hidden = false;
+  } else {
+    ui.themeWhy.textContent = '';
+    ui.themeWhy.hidden = true;
+  }
 
   ui.themeChips.innerHTML = '';
   (theme.imagery || []).forEach((word, i) => {

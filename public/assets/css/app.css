@@ -877,6 +877,20 @@
   color: var(--ink-3);
 }
 
+/* 「模型没接上」的具体原因。不写出来的话，用户只看到"暂不可用"，
+   没法判断是超时、限流还是 Key 失效，反馈起来也只能说"它又不行了" */
+.stage-why {
+  margin-top: 6px;
+  padding: 8px 11px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #8c5a1f;
+  background: rgba(201, 142, 46, 0.08);
+  border-left: 2px solid rgba(201, 142, 46, 0.55);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  overflow-wrap: anywhere;
+}
+
 .theme-textarea {
   width: 100%;
   min-height: 150px;

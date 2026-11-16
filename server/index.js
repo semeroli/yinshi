@@ -37,6 +37,7 @@ import {
   chat,
   chatJson,
   hasOnlineModel,
+  hasSenseNova,
   STEP_TIMEOUT,
 } from './model.js';
 import {
@@ -451,6 +452,39 @@ async function handleApi(req, res, pathname, url) {
   if (pathname === '/api/auth/me') {
     const user = getUserFromRequest(req);
     return send(res, 200, { user: publicUser(user) });
+  }
+
+  // 模型自检：不写诗也能问「上游到底通不通」。与线上同一份 chat()，不另抄探测逻辑
+  if (pathname === '/api/ai-status') {
+    const user = getUserFromRequest(req);
+    if (!user) return send(res, 401, { error: '请先登录' });
+    if (!rateLimit(`ai-status:${ip}`, 6, 10 * 60 * 1000)) {
+      return send(res, 429, { error: '查得太频繁了，10 分钟后再试' });
+    }
+    const configured = {
+      llm: Boolean(process.env.LLM_BASE_URL && process.env.LLM_API_KEY),
+      modelscope: Boolean(process.env.MODELSCOPE_API_KEY),
+      sensenova: hasSenseNova(),
+    };
+    if (DEMO_MODE) {
+      return send(res, 200, { ok: false, configured, demo: true, error: '一个模型 Key 都没配，当前是演示模式' });
+    }
+    const t0 = Date.now();
+    try {
+      const { channel, content } = await chat(
+        [{ role: 'user', content: '只回一个字：好' }],
+        { temperature: 0, max_tokens: 8, timeoutMs: 9000 },
+      );
+      return send(res, 200, {
+        ok: true,
+        configured,
+        channel,
+        ms: Date.now() - t0,
+        sample: String(content || '').slice(0, 20),
+      });
+    } catch (err) {
+      return send(res, 200, { ok: false, configured, ms: Date.now() - t0, error: err.message });
+    }
   }
 
   if (pathname === '/api/auth/register' && req.method === 'POST') {
