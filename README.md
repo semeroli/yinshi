@@ -66,8 +66,7 @@ PORT=5180 ADMIN_USERNAME=admin node server/index.js
 | 变量 | 作用 |
 | --- | --- |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | **通用 OpenAI 兼容通道（推荐）**，如 DeepSeek：`https://api.deepseek.com/v1` + `deepseek-chat` |
-| `MODELSCOPE_API_KEY` | 魔搭 ModelScope 通道（模型会上下架，`MODELSCOPE_MODEL` 可填多个候选） |
-| `SENSENOVA_API_KEY` | 商汤日日新备用通道（单 Key，直接作为 Bearer） |
+| `MODELSCOPE_API_KEY` | 魔搭 ModelScope 通道（模型会上下架，`MODELSCOPE_MODEL` 可填多个候选） || `SENSENOVA_API_KEY` | 商汤日日新备用通道（单 Key，直接作为 Bearer） |
 | `SENSENOVA_AK` / `SENSENOVA_SK` | 商汤日日新备用通道（AK/SK 换 JWT，与单 Key 二选一） |
 | `JWT_SECRET` | 会话签名密钥，生产必须替换 |
 | `ADMIN_USERNAME` | 管理员用户名 |
@@ -101,7 +100,21 @@ Key 只存在于服务端环境变量，前端代码中不出现任何密钥。
 
 **体裁是硬约束**：用户点了七言，库存就只在七言池里挑，绝不因为意象分更高就换成五言。选七言出五言，后面按七言口径校验必然全句不合格，补两句就成了一串长短句。
 
-**「模型在线」只代表配了 Key**：右上角那个徽标读的是 `hasOnlineModel(env)`，Key 在就亮，调不调得通它不知道。要判断真的通不通，登录后访问 `GET /api/ai-status`，它会真发一次最小请求并把三家上游（LLM / 魔搭 / 商汤）各自的错因原样带回来。
+**「模型在线」只代表配了 Key**：右上角那个徽标读的是 `hasOnlineModel(env)`，Key 在就亮，调不调得通它不知道。要判断真的通不通，登录后访问 `GET /api/ai-status`，它会真发一次最小请求并把三家上游（LLM / 魔搭 / 商汤）各自的错因原样带回来；`model` 字段回报这次用的是哪个模型。
+
+### 魔搭模型下架了怎么办
+
+魔搭的服务端推理模型会不定期上下架。下架后接口报 `HTTP 400 has no provider supported`，**不会报"模型不存在"**，很容易被误读成 Key 的问题。整站会静默退回本地库存（页面右上角写「本地诗库·模型未用上」）。
+
+2026-11-16 就发生过一次：`Qwen/Qwen3-8B`、`Qwen/Qwen3-32B`、`Qwen/Qwen2.5-7B-Instruct`、`deepseek-ai/DeepSeek-V3.1` 四个候选**同时全没了**。
+
+查当前在架清单（**匿名可读**，不需要 Key）：
+
+```bash
+curl -s https://api-inference.modelscope.cn/v1/models | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).data.map(x=>x.id).join('\n')))"
+```
+
+从里面挑 2~3 个（中文好 + Flash 级），填进 `MODELSCOPE_MODEL`（逗号分隔）或改 `model.js` 的 `DEFAULT_MODELS`。**候选别超过 3 个**：候选是串行试的、按预算均分，润色那一步总共只有 18 秒，放五个等于每家 3 秒，一个都写不完，照样降级。
 
 ## 回归
 

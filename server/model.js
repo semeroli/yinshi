@@ -84,14 +84,23 @@ async function callOpenAICompatible(messages, { temperature, top_p, max_tokens, 
 }
 
 /** 魔搭服务端模型会上下架：MODELSCOPE_MODEL 可填多个候选，未命中时按链重试 */
+/**
+ * 🔴 2026-11-16 实测：原来那四个（Qwen3-8B / Qwen3-32B / Qwen2.5-7B-Instruct /
+ *    DeepSeek-V3.1）全部下架，接口报 400 "has no provider supported"。
+ *    现用清单来自 https://api-inference.modelscope.cn/v1/models（匿名可读）。
+ *    候选别贪多：串行试会均分超时，润色只有 18 秒，放五个等于一个都出不来。
+ */
 const DEFAULT_MODELS = [
-  'Qwen/Qwen3-8B',
-  'Qwen/Qwen3-32B',
-  'Qwen/Qwen2.5-7B-Instruct',
-  'deepseek-ai/DeepSeek-V3.1',
+  'Qwen/Qwen3.8-Flash-Next',
+  'ZhipuAI/GLM-5.2',
+  'deepseek-ai/DeepSeek-V4.1-Flash',
 ];
 
 let workingModel = '';
+/** 上一轮真正调通的模型名；自检接口靠它回报"用的哪个" */
+export function getWorkingModel() {
+  return workingModel;
+}
 let modelScopeDownUntil = 0;
 let lastProbeAt = 0;
 /** 熔断期内的半开探测间隔；熔断时长也别给太长，否则一次失手 = 十分钟全废 */
@@ -120,10 +129,22 @@ async function callModelScope(messages, { temperature, top_p, max_tokens, timeou
   const candidates = model ? [model] : workingModel ? [workingModel] : modelCandidates();
   const errors = [];
 
-  // 候选模型是串行试的，每家都吃满超时会把整步拖爆 ⇒ 按剩余候选均分
-  const perTry = Math.max(6000, Math.floor((timeoutMs || DEFAULT_TIMEOUT_MS) / candidates.length));
+  // 按**剩余预算**动态分配：润色只有 18 秒，固定均分会让每个候选都短到来不及出字
+  const totalBudget = timeoutMs || DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + totalBudget;
 
-  for (const name of candidates) {
+  for (let i = 0; i < candidates.length; i += 1) {
+    const name = candidates[i];
+    const left = deadline - Date.now();
+    if (left < 2500) {
+      errors.push(`${name}: 总预算用尽，未尝试`);
+      break;
+    }
+    const remain = candidates.length - i;
+    // 第一家给一半预算：命中的大概率是第一个，别让它跟备胎平分到谁都写不完
+    const share = i === 0 && remain > 1 ? Math.floor(left * 0.5) : Math.floor(left / remain);
+    const perTry = Math.max(2500, Math.min(left - 300, share));
+
     try {
       const data = await postJson(
         'https://api-inference.modelscope.cn/v1/chat/completions',
@@ -191,15 +212,27 @@ async function callSenseNova(messages, { temperature, top_p, max_tokens, timeout
     const headers = { Authorization: `Bearer ${apiKey}` };
 
     let content = '';
+    let firstHint = '';
     try {
       const data = await postJson(url, headers, { ...payload, response_format: { type: 'json_object' } }, timeoutMs);
       content = pickContent(data);
-    } catch {
+      if (!content) firstHint = `带 response_format 时 200 但内容为空：${JSON.stringify(data).slice(0, 160)}`;
+    } catch (err) {
+      // 以前这里把异常静默吞了，外界只看到"商汤返回为空"，401/404/模型名错全查不出来
+      firstHint = `带 response_format 失败：${err.message}`;
       content = '';
     }
     if (!content) {
       const data = await postJson(url, headers, payload, timeoutMs);
       content = pickContent(data);
+      if (!content) {
+        throw new Error(
+          `商汤返回为空（模型 ${payload.model}）。纯文本请求 200 但无内容：${JSON.stringify(data).slice(
+            0,
+            150,
+          )}｜${firstHint}`,
+        );
+      }
     }
     if (!content) throw new Error('商汤返回为空');
     return content;

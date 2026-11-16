@@ -38,6 +38,7 @@ import {
   chatJson,
   hasOnlineModel,
   hasSenseNova,
+  getWorkingModel,
   STEP_TIMEOUT,
 } from './model.js';
 import {
@@ -473,17 +474,25 @@ async function handleApi(req, res, pathname, url) {
     try {
       const { channel, content } = await chat(
         [{ role: 'user', content: '只回一个字：好' }],
-        { temperature: 0, max_tokens: 8, timeoutMs: 9000 },
+        // 别用 max_tokens: 8 —— 推理型模型会把预算花在思考上，content 返回空，误判成"返回为空"
+        { temperature: 0, max_tokens: 32, timeoutMs: 9000 },
       );
       return send(res, 200, {
         ok: true,
         configured,
         channel,
+        model: getWorkingModel() || '',
         ms: Date.now() - t0,
-        sample: String(content || '').slice(0, 20),
+        sample: String(content || '').slice(0, 30),
       });
     } catch (err) {
-      return send(res, 200, { ok: false, configured, ms: Date.now() - t0, error: err.message });
+      return send(res, 200, {
+        ok: false,
+        configured,
+        model: getWorkingModel() || '',
+        ms: Date.now() - t0,
+        error: err.message,
+      });
     }
   }
 
